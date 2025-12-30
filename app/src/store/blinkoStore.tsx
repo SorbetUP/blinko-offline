@@ -142,6 +142,125 @@ export class BlinkoStore implements Store {
     };
   }
 
+  private resolveNoteType(type?: NoteType) {
+    return type ?? this.noteTypeDefault ?? NoteType.BLINKO;
+  }
+
+  private isNetworkError(error: unknown) {
+    if (!error) return false;
+    const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+    if (message.includes('failed to fetch') || message.includes('networkerror') || message.includes('load failed')) {
+      return true;
+    }
+    const errorCode = (error as { code?: string }).code;
+    return Boolean(errorCode && ['ECONNREFUSED', 'ENOTFOUND', 'ETIMEDOUT'].includes(errorCode));
+  }
+
+  private async saveNoteOffline(params: UpsertNoteParams) {
+    const {
+      content = null,
+      isArchived,
+      isRecycle,
+      type,
+      id,
+      attachments = [],
+      refresh = true,
+      isTop,
+      isShare,
+      showToast = true,
+      references = [],
+      metadata
+    } = params;
+
+    const resolvedType = this.resolveNoteType(type);
+    const now = Date.now();
+    const nowDate = new Date(now);
+
+    if (!id) {
+      // CREATE: new note offline
+      const dbNote = {
+        id: now,
+        accountId: Number(RootStore.Get(UserStore).id),
+        content: content || '',
+        type: resolvedType,
+        isArchived: !!isArchived,
+        isRecycle: !!isRecycle,
+        attachments: attachments || [],
+        isTop: !!isTop,
+        isShare: !!isShare,
+        references: references.map(refId => ({ toNoteId: refId })),
+        createdAt: nowDate,
+        updatedAt: nowDate,
+        tags: [],
+        metadata: metadata || {},
+        localUpdatedAt: now,
+        syncStatus: 'pending' as const
+      };
+
+      try {
+        await db.notes.add(dbNote);
+      } catch (error) {
+        console.error('[OFFLINE] Failed to save note to IndexedDB:', error);
+        RootStore.Get(ToastPlugin).addToast({
+          type: 'error',
+          title: i18n.t('error'),
+          description: 'Impossible de sauvegarder la note localement'
+        });
+        throw error;
+      }
+      await RootStore.Get(SyncQueueStore).enqueue({
+        operationType: 'create',
+        entityType: 'note',
+        entityId: dbNote.id,
+        data: dbNote,
+        status: 'pending'
+      });
+      showToast && RootStore.Get(ToastPlugin).success(i18n.t("create-successfully") + '-' + i18n.t("offline-status"));
+      refresh && this.updateTicker++;
+      return dbNote;
+    }
+
+    // UPDATE: existing note offline
+    const existingNote = await db.notes.get(id);
+    const updatedNote = {
+      ...existingNote,
+      accountId: existingNote?.accountId || Number(RootStore.Get(UserStore).id),
+      content: content !== undefined ? content : existingNote?.content ?? '',
+      type: type !== undefined ? type : existingNote?.type ?? resolvedType,
+      isArchived: isArchived !== undefined ? isArchived : existingNote?.isArchived,
+      isRecycle: isRecycle !== undefined ? isRecycle : existingNote?.isRecycle,
+      isTop: isTop !== undefined ? isTop : existingNote?.isTop,
+      isShare: isShare !== undefined ? isShare : existingNote?.isShare,
+      attachments: attachments !== undefined ? attachments : existingNote?.attachments,
+      metadata: metadata !== undefined ? metadata : existingNote?.metadata,
+      updatedAt: nowDate,
+      localUpdatedAt: now,
+      syncStatus: 'pending' as const
+    };
+
+    try {
+      await db.notes.put(updatedNote as any);
+    } catch (error) {
+      console.error('[OFFLINE] Failed to update note in IndexedDB:', error);
+      RootStore.Get(ToastPlugin).addToast({
+        type: 'error',
+        title: i18n.t('error'),
+        description: 'Impossible de mettre à jour la note localement'
+      });
+      throw error;
+    }
+    await RootStore.Get(SyncQueueStore).enqueue({
+      operationType: 'update',
+      entityType: 'note',
+      entityId: id,
+      data: updatedNote,
+      status: 'pending'
+    });
+    showToast && RootStore.Get(ToastPlugin).success(i18n.t("update-successfully") + '-' + i18n.t("offline-status"));
+    refresh && this.updateTicker++;
+    return updatedNote;
+  }
+
   private getLocalTimestamp(note: Note) {
     const candidate = note.updatedAt ?? note.createdAt;
     const timestamp = candidate ? new Date(candidate as any).getTime() : NaN;
@@ -203,7 +322,8 @@ export class BlinkoStore implements Store {
     const cachedNotes = await db.notes.toArray();
     const filteredCachedNotes = cachedNotes.filter(offlineFilter);
 
-    if (!this.isOnline) {
+    const isBrowserOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
+    if (!this.isOnline && !isBrowserOnline) {
       // Pure offline mode
       const start = (page - 1) * size;
       const end = start + size;
@@ -271,112 +391,34 @@ export class BlinkoStore implements Store {
 
       // Offline mode: save to IndexedDB and queue for sync
       if (!this.isOnline) {
-        const now = Date.now();
-        const nowDate = new Date(now);
-
-        if (!id) {
-          // CREATE: new note offline
-          const dbNote = {
-            id: now,
-            accountId: Number(RootStore.Get(UserStore).id),
-            content: content || '',
-            type,
-            isArchived: !!isArchived,
-            isRecycle: !!isRecycle,
-            attachments: attachments || [],
-            isTop: !!isTop,
-            isShare: !!isShare,
-            references: references.map(refId => ({ toNoteId: refId })),
-            createdAt: nowDate,
-            updatedAt: nowDate,
-            tags: [],
-            metadata: metadata || {},
-            localUpdatedAt: now,
-            syncStatus: 'pending' as const
-          };
-
-          try {
-            await db.notes.add(dbNote);
-          } catch (error) {
-            console.error('[OFFLINE] Failed to save note to IndexedDB:', error);
-            RootStore.Get(ToastPlugin).addToast({
-              type: 'error',
-              title: i18n.t('error'),
-              description: 'Impossible de sauvegarder la note localement'
-            });
-            throw error;
-          }
-          await RootStore.Get(SyncQueueStore).enqueue({
-            operationType: 'create',
-            entityType: 'note',
-            entityId: dbNote.id,
-            data: dbNote,
-            status: 'pending'
-          });
-          showToast && RootStore.Get(ToastPlugin).success(i18n.t("create-successfully") + '-' + i18n.t("offline-status"));
-          refresh && this.updateTicker++;
-          return dbNote;
-        } else {
-          // UPDATE: existing note offline
-          const existingNote = await db.notes.get(id);
-          const updatedNote = {
-            ...existingNote,
-            accountId: existingNote?.accountId || Number(RootStore.Get(UserStore).id),
-            content: content !== undefined ? content : existingNote?.content,
-            type: type !== undefined ? type : existingNote?.type,
-            isArchived: isArchived !== undefined ? isArchived : existingNote?.isArchived,
-            isRecycle: isRecycle !== undefined ? isRecycle : existingNote?.isRecycle,
-            isTop: isTop !== undefined ? isTop : existingNote?.isTop,
-            isShare: isShare !== undefined ? isShare : existingNote?.isShare,
-            attachments: attachments !== undefined ? attachments : existingNote?.attachments,
-            metadata: metadata !== undefined ? metadata : existingNote?.metadata,
-            updatedAt: nowDate,
-            localUpdatedAt: now,
-            syncStatus: 'pending' as const
-          };
-
-          try {
-            await db.notes.put(updatedNote as any);
-          } catch (error) {
-            console.error('[OFFLINE] Failed to update note in IndexedDB:', error);
-            RootStore.Get(ToastPlugin).addToast({
-              type: 'error',
-              title: i18n.t('error'),
-              description: 'Impossible de mettre à jour la note localement'
-            });
-            throw error;
-          }
-          await RootStore.Get(SyncQueueStore).enqueue({
-            operationType: 'update',
-            entityType: 'note',
-            entityId: id,
-            data: updatedNote,
-            status: 'pending'
-          });
-          showToast && RootStore.Get(ToastPlugin).success(i18n.t("update-successfully") + '-' + i18n.t("offline-status"));
-          refresh && this.updateTicker++;
-          return updatedNote;
-        }
+        return await this.saveNoteOffline(params);
       }
 
-      const res = await api.notes.upsert.mutate({
-        content,
-        type,
-        isArchived,
-        isRecycle,
-        id,
-        attachments,
-        isTop,
-        isShare,
-        references,
-        createdAt: inputCreatedAt ? new Date(inputCreatedAt) : undefined,
-        updatedAt: inputUpdatedAt ? new Date(inputUpdatedAt) : undefined,
-        metadata
-      });
-      eventBus.emit('editor:clear')
-      showToast && RootStore.Get(ToastPlugin).success(id ? i18n.t("update-successfully") : i18n.t("create-successfully"))
-      refresh && this.updateTicker++
-      return res
+      try {
+        const res = await api.notes.upsert.mutate({
+          content,
+          type,
+          isArchived,
+          isRecycle,
+          id,
+          attachments,
+          isTop,
+          isShare,
+          references,
+          createdAt: inputCreatedAt ? new Date(inputCreatedAt) : undefined,
+          updatedAt: inputUpdatedAt ? new Date(inputUpdatedAt) : undefined,
+          metadata
+        });
+        eventBus.emit('editor:clear')
+        showToast && RootStore.Get(ToastPlugin).success(id ? i18n.t("update-successfully") : i18n.t("create-successfully"))
+        refresh && this.updateTicker++
+        return res
+      } catch (error) {
+        if (!this.isOnline || this.isNetworkError(error)) {
+          return await this.saveNoteOffline(params);
+        }
+        throw error;
+      }
     }
   })
 
