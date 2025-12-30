@@ -11,6 +11,7 @@ import { CommonLayout } from '@/components/Layout';
 import { AppProvider } from '@/store/module/AppProvider';
 import { BlinkoMultiSelectPop } from '@/components/BlinkoMultiSelectPop';
 import { BlinkoMusicPlayer } from '@/components/BlinkoMusicPlayer';
+import { SyncStatusIndicator } from '@/components/Sync/SyncStatusIndicator';
 import { LoadingPage } from '@/components/Common/LoadingPage';
 import { PluginManagerStore } from '@/store/plugin/pluginManagerStore';
 import { RootStore } from '@/store';
@@ -21,6 +22,7 @@ import { useAndroidShortcuts } from '@/lib/hooks';
 import { useQuickaiHotkey } from '@/hooks/useQuickaiHotkey';
 import { useInitialHotkeySetup } from '@/hooks/useInitialHotkeySetup';
 import { isInTauri, isDesktop } from "@/lib/tauriHelper";
+import { initBlinkoEndpoint } from "@/lib/blinkoEndpoint";
 import { listen } from "@tauri-apps/api/event";
 import QuickNotePage from "./pages/quicknote";
 import QuickAIPage from "./pages/quickai";
@@ -267,6 +269,9 @@ function App() {
   }
 
   useEffect(() => {
+    // Initialize Tauri endpoint if needed
+    initBlinkoEndpoint();
+
     RootStore.Get(PluginManagerStore).initInstalledPlugins();
   }, []);
 
@@ -293,6 +298,7 @@ function App() {
           </ThemeProvider>
         </HeroUIProvider>
         <BlinkoMusicPlayer />
+        <SyncStatusIndicator />
       </BrowserRouter>
     </>
   );

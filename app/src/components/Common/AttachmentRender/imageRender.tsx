@@ -11,6 +11,8 @@ import axiosInstance from '@/lib/axios';
 import { getBlinkoEndpoint } from '@/lib/blinkoEndpoint';
 import { RootStore } from '@/store';
 import { UserStore } from '@/store/user';
+import { ImageCacheStore } from '@/store/cache/imageCacheStore';
+import { BaseStore } from '@/store/baseStore';
 
 type IProps = {
   files: FileType[]
@@ -22,31 +24,102 @@ export const ImageThumbnailRender = ({ src, className }: { src: string, classNam
   const [isOriginalError, setIsOriginalError] = useState(false);
   const [currentSrc, setCurrentSrc] = useState('');
   const [loading, setLoading] = useState(true);
+  const userStore = RootStore.Get(UserStore);
+  const imageCacheStore = RootStore.Get(ImageCacheStore);
+  const baseStore = RootStore.Get(BaseStore);
 
   useEffect(() => {
     let objectUrl = '';
 
     const fetchImage = async () => {
       setLoading(true);
+      const token = userStore.tokenData.value?.token;
+
+      // Extract attachment ID from src (format: /api/v1/file/123)
+      const attachmentIdMatch = src.match(/\/file\/(\d+)/);
+      const attachmentId = attachmentIdMatch ? parseInt(attachmentIdMatch[1]) : null;
+
+      // Try to get from cache first (offline or online)
+      if (attachmentId) {
+        try {
+          const cachedBlob = await imageCacheStore.getImage(attachmentId);
+          if (cachedBlob) {
+            objectUrl = URL.createObjectURL(cachedBlob);
+            setCurrentSrc(objectUrl);
+            setLoading(false);
+            return;
+          }
+        } catch (error) {
+          console.log('[Image] Cache lookup failed:', error);
+        }
+      }
+
+      // If not in cache and offline, show fallback
+      if (!baseStore.isOnline) {
+        console.log('[Image] Offline and not cached, showing fallback');
+        setIsOriginalError(true);
+        setLoading(false);
+        return;
+      }
+
+      // Online: fetch from server
       try {
-        // Try to get thumbnail first
+        // Try 1: Get thumbnail with Authorization header (via axios interceptor)
         const response = await axiosInstance.get(getBlinkoEndpoint(`${src}?thumbnail=true`), {
           responseType: 'blob'
         });
 
         objectUrl = URL.createObjectURL(response.data);
         setCurrentSrc(objectUrl);
-      } catch (error) {
+
+        // Cache the image for offline use
+        if (attachmentId) {
+          imageCacheStore.cacheImage(attachmentId, response.data).catch(err => {
+            console.warn('[Image] Failed to cache:', err);
+          });
+        }
+      } catch (error: any) {
+        if (error?.response?.status === 401 && token) {
+          // Try 2: Retry with token in query param
+          try {
+            const response = await axiosInstance.get(
+              getBlinkoEndpoint(`${src}?thumbnail=true&token=${token}`),
+              { responseType: 'blob' }
+            );
+
+            objectUrl = URL.createObjectURL(response.data);
+            setCurrentSrc(objectUrl);
+
+            // Cache the image
+            if (attachmentId) {
+              imageCacheStore.cacheImage(attachmentId, response.data).catch(err => {
+                console.warn('[Image] Failed to cache:', err);
+              });
+            }
+            return;
+          } catch (error2) {
+            console.error('[Image] Token query param failed:', error2);
+          }
+        }
+
+        // Try 3: Original image
         try {
-          // If thumbnail fails, try original image
           const response = await axiosInstance.get(src, {
             responseType: 'blob'
           });
 
           objectUrl = URL.createObjectURL(response.data);
           setCurrentSrc(objectUrl);
+
+          // Cache the image
+          if (attachmentId) {
+            imageCacheStore.cacheImage(attachmentId, response.data).catch(err => {
+              console.warn('[Image] Failed to cache:', err);
+            });
+          }
         } catch (error) {
-          // If both fail, use fallback
+          console.error('[Image] All attempts failed:', error);
+          // If all fail, use fallback
           setIsOriginalError(true);
         }
       } finally {
@@ -62,7 +135,7 @@ export const ImageThumbnailRender = ({ src, className }: { src: string, classNam
         URL.revokeObjectURL(objectUrl);
       }
     };
-  }, [src]);
+  }, [src, userStore.tokenData.value?.token, baseStore.isOnline]);
 
   useEffect(() => {
     if (isOriginalError) {

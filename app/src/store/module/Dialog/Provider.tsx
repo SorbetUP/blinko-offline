@@ -58,12 +58,14 @@ const Dialog = observer(() => {
       enter: {
         y: 0,
         opacity: 1,
+        filter: 'blur(0px)',
         transition: { type: 'spring', bounce: 0.5, duration: 0.6 },
       },
       exit: {
-        y: -20,
+        y: 0,
         opacity: 0,
-        transition: { type: 'spring', bounce: 0.5, duration: 0.3 },
+        filter: 'blur(8px)',
+        transition: { duration: 0.4, ease: 'easeOut' },
       },
     }
   };
@@ -186,12 +188,14 @@ const Dialog = observer(() => {
             enter: {
               y: 0,
               opacity: 1,
+              filter: 'blur(0px)',
               transition: { type: 'spring', bounce: 0.5, duration: 0.6, },
             },
             exit: {
-              y: -20,
+              y: 0,
               opacity: 0,
-              transition: { type: 'spring', bounce: 0.5, duration: 0.3, },
+              filter: 'blur(8px)',
+              transition: { duration: 0.4, ease: 'easeOut' },
             },
           }
         }}

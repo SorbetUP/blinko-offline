@@ -220,7 +220,14 @@ export const useEditorInit = (
       hint: {
         extend: mode != 'comment' ? Extend : AIExtend
       },
-      cdn: getBlinkoEndpoint('').replace(/\/$/, ""),
+      cdn: (() => {
+        const endpoint = getBlinkoEndpoint('').replace(/\/$/, "");
+        // Fallback to window.location.origin if endpoint is empty (Android/mobile)
+        if (!endpoint || endpoint === '') {
+          return window.location.origin;
+        }
+        return endpoint;
+      })(),
       async ctrlEnter(md) {
         await store.handleSend()
       },

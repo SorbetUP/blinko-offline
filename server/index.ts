@@ -88,6 +88,51 @@ async function initializeJobs() {
   }
 }
 
+/**
+ * Initialize required directories for file storage
+ * Creates all necessary directories if they don't exist
+ */
+async function initializeDirectories() {
+  try {
+    console.log('Initializing storage directories...');
+
+    const { UPLOAD_FILE_PATH, DBBAKUP_PATH, ROOT_PATH, TEMP_PATH, VECTOR_PATH } = await import('../shared/lib/pathConstant');
+
+    // Create all required directories
+    const directories = [ROOT_PATH, UPLOAD_FILE_PATH, TEMP_PATH, DBBAKUP_PATH, VECTOR_PATH];
+
+    for (const dir of directories) {
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+        console.log(`Created directory: ${dir}`);
+      }
+    }
+
+    // Copy seed files if upload directory is empty
+    const seedPath = path.resolve(__dirname, '../prisma/seedfiles');
+    if (fs.existsSync(seedPath) && fs.existsSync(UPLOAD_FILE_PATH)) {
+      const uploadFiles = fs.readdirSync(UPLOAD_FILE_PATH);
+      // Only copy if directory is empty (excluding temp directory)
+      if (uploadFiles.filter(f => f !== 'temp').length === 0) {
+        const seedFiles = fs.readdirSync(seedPath);
+        for (const file of seedFiles) {
+          const sourcePath = path.join(seedPath, file);
+          const destPath = path.join(UPLOAD_FILE_PATH, file);
+          if (fs.statSync(sourcePath).isFile()) {
+            fs.copyFileSync(sourcePath, destPath);
+            console.log(`Copied seed file: ${file}`);
+          }
+        }
+      }
+    }
+
+    console.log('Storage directories initialized successfully');
+  } catch (error) {
+    console.error('Failed to initialize storage directories:', error);
+    // Don't throw - allow server to start even if directory initialization fails
+  }
+}
+
 // Server configuration
 const app = express();
 const PORT = 1111;
@@ -233,6 +278,9 @@ async function setupApiRoutes(app: express.Application) {
  */
 async function bootstrap() {
   try {
+    // Initialize storage directories first
+    await initializeDirectories();
+
     app.use(cors({
       origin: true,
       credentials: true

@@ -994,6 +994,26 @@ export const noteRouter = router({
               },
             },
           });
+
+          // Limit history to 10 versions - delete oldest versions
+          const historyCount = await prisma.noteHistory.count({
+            where: { noteId: id },
+          });
+
+          if (historyCount > 10) {
+            const versionsToDelete = await prisma.noteHistory.findMany({
+              where: { noteId: id },
+              orderBy: { version: 'asc' },
+              take: historyCount - 10,
+              select: { id: true },
+            });
+
+            await prisma.noteHistory.deleteMany({
+              where: {
+                id: { in: versionsToDelete.map(v => v.id) },
+              },
+            });
+          }
         }
 
         // For shared editors, we need to use a different where clause
@@ -1795,6 +1815,57 @@ export const noteRouter = router({
       );
 
       return { success: true };
+    }),
+
+  // Delta sync endpoint: get notes modified since a specific timestamp
+  listSince: authProcedure
+    .input(
+      z.object({
+        since: z.date().or(z.string()).transform(val => typeof val === 'string' ? new Date(val) : val),
+        limit: z.number().default(100).optional(),
+      })
+    )
+    .output(
+      z.array(
+        notesSchema.merge(
+          z.object({
+            attachments: z.array(attachmentsSchema),
+            tags: z.array(
+              tagsToNoteSchema.merge(
+                z.object({
+                  tag: tagSchema,
+                })
+              )
+            ),
+          })
+        )
+      )
+    )
+    .query(async ({ input, ctx }) => {
+      const { since, limit = 100 } = input;
+
+      const notes = await prisma.notes.findMany({
+        where: {
+          accountId: Number(ctx.id),
+          updatedAt: {
+            gt: since,
+          },
+        },
+        include: {
+          attachments: true,
+          tags: {
+            include: {
+              tag: true,
+            },
+          },
+        },
+        orderBy: {
+          updatedAt: 'desc',
+        },
+        take: limit,
+      });
+
+      return notes;
     }),
 });
 

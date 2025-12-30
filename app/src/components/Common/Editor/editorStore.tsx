@@ -7,7 +7,7 @@ import { api } from '@/lib/trpc';
 import { AiStore } from '@/store/aiStore';
 import { getEditorElements, type ViewMode } from './editorUtils';
 import { makeAutoObservable } from 'mobx';
-import Vditor from 'vditor';
+import Vditor, { IVditor } from 'vditor';
 import { showTipsDialog } from '../TipsDialog';
 import i18n from '@/lib/i18n';
 import { DialogStandaloneStore } from '@/store/module/DialogStandalone';

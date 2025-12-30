@@ -21,7 +21,7 @@ export const LoadingAndEmpty = ({ isLoading, isEmpty, emptyMessage, className, i
         height="40"
       />
       {isEmpty && (
-        <div className={`${isAbsolute ? 'absolute top-[40%]' : ''} select-none text-ignore flex items-center justify-center gap-2 w-full mt-2 md:mt-10`}>
+        <div className={`${isAbsolute ? 'absolute top-[40%]' : ''} select-none text-ignore flex items-center justify-center gap-2 w-full ${isAbsolute ? 'mt-2 md:mt-10' : 'mt-2'}`}>
           <Icon icon="line-md:coffee-half-empty-twotone-loop" width="24" height="24" />
           <div className='text-md text-ignore font-bold'>
             {emptyMessage || t('no-data-here-well-then-time-to-write-a-note')}

@@ -81,12 +81,27 @@ export const BlinkoCard = observer(({ blinkoItem, account, isShareMode = false, 
     }
   };
 
-  const handleClick = () => {
+  const handleClick = (e: React.MouseEvent) => {
     if (isExpanded) return;
     if (blinko.isMultiSelectMode) {
       blinko.onMultiSelectNote(blinkoItem.id!);
     } else {
-      handleExpand();
+      // Open editor on single click (unless in share mode)
+      if (isShareMode) return;
+
+      // Don't open editor if clicking on images, links, or if text is selected
+      const target = e.target as HTMLElement;
+      const isClickOnImage = target.tagName === 'IMG' || target.closest('img');
+      const isClickOnLink = target.tagName === 'A' || target.closest('a');
+      const hasTextSelection = window.getSelection()?.toString().length ?? 0 > 0;
+
+      if (isClickOnImage || isClickOnLink || hasTextSelection) {
+        return;
+      }
+
+      blinko.curSelectedNote = _.cloneDeep(blinkoItem);
+      ShowEditBlinkoModel();
+      FocusEditorFixMobile();
     }
   };
 

@@ -24,7 +24,7 @@ async function build() {
       },
       packages: 'bundle',
       external: [
-        'buffer', 'crypto', 'events', 'fs', 'http', 'https', 'net', 
+        'buffer', 'crypto', 'events', 'fs', 'http', 'https', 'net',
         'os', 'path', 'querystring', 'stream', 'util', 'zlib',
         '@node-rs/crc32',
         'lightningcss',
@@ -38,7 +38,8 @@ async function build() {
         '@libsql/linux-x64-musl',
         '@libsql/linux-x64-gnu',
         '@libsql/linux-arm64-musl',
-        '@libsql/linux-arm64-gnu'
+        '@libsql/linux-arm64-gnu',
+        'fsevents'
       ],
       define: {
         'process.env.NODE_ENV': '"production"',

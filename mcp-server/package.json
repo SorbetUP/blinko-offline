@@ -1,0 +1,27 @@
+{
+  "name": "blinko-mcp-server",
+  "version": "1.0.0",
+  "type": "module",
+  "bin": {
+    "blinko-mcp": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc && chmod +x dist/index.js",
+    "dev": "tsx index.ts",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.18.1",
+    "@trpc/client": "^11.1.0",
+    "axios": "^1.12.2",
+    "dexie": "^4.2.1",
+    "fake-indexeddb": "^6.0.0",
+    "mobx": "^6.15.0",
+    "superjson": "^2.2.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20.2.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.1.6"
+  }
+}

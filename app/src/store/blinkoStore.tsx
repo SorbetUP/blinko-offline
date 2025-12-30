@@ -12,7 +12,7 @@ import i18n from '@/lib/i18n';
 import { api } from '@/lib/trpc';
 import { Attachment, NoteType, type Note } from '@shared/lib/types';
 import { ARCHIVE_BLINKO_TASK_NAME, DBBAK_TASK_NAME } from '@shared/lib/sharedConstant';
-import { makeAutoObservable } from 'mobx';
+import { makeAutoObservable, toJS } from 'mobx';
 import { UserStore } from './user';
 import { BaseStore } from './baseStore';
 import { StorageState } from './standard/StorageState';
@@ -146,6 +146,15 @@ export class BlinkoStore implements Store {
     return type ?? this.noteTypeDefault ?? NoteType.BLINKO;
   }
 
+  private normalizeReferenceIds(references: unknown) {
+    if (!Array.isArray(references)) {
+      return references === undefined ? undefined : [];
+    }
+    return references
+      .map((ref) => (typeof ref === 'number' ? ref : (ref as { toNoteId?: number }).toNoteId))
+      .filter((refId): refId is number => typeof refId === 'number');
+  }
+
   private isNetworkError(error: unknown) {
     if (!error) return false;
     const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
@@ -175,8 +184,12 @@ export class BlinkoStore implements Store {
     const resolvedType = this.resolveNoteType(type);
     const now = Date.now();
     const nowDate = new Date(now);
+    const plainAttachments = attachments !== undefined ? toJS(attachments) : undefined;
+    const plainReferences = references !== undefined ? toJS(references) : undefined;
+    const plainMetadata = metadata !== undefined ? toJS(metadata) : undefined;
 
     if (!id) {
+      const normalizedReferences = (plainReferences ?? []).map(refId => ({ toNoteId: refId }));
       // CREATE: new note offline
       const dbNote = {
         id: now,
@@ -185,14 +198,14 @@ export class BlinkoStore implements Store {
         type: resolvedType,
         isArchived: !!isArchived,
         isRecycle: !!isRecycle,
-        attachments: attachments || [],
+        attachments: plainAttachments ?? [],
         isTop: !!isTop,
         isShare: !!isShare,
-        references: references.map(refId => ({ toNoteId: refId })),
+        references: normalizedReferences,
         createdAt: nowDate,
         updatedAt: nowDate,
         tags: [],
-        metadata: metadata || {},
+        metadata: plainMetadata ?? {},
         localUpdatedAt: now,
         syncStatus: 'pending' as const
       };
@@ -222,6 +235,9 @@ export class BlinkoStore implements Store {
 
     // UPDATE: existing note offline
     const existingNote = await db.notes.get(id);
+    const normalizedReferences = plainReferences !== undefined
+      ? plainReferences.map(refId => ({ toNoteId: refId }))
+      : existingNote?.references ?? [];
     const updatedNote = {
       ...existingNote,
       accountId: existingNote?.accountId || Number(RootStore.Get(UserStore).id),
@@ -231,8 +247,9 @@ export class BlinkoStore implements Store {
       isRecycle: isRecycle !== undefined ? isRecycle : existingNote?.isRecycle,
       isTop: isTop !== undefined ? isTop : existingNote?.isTop,
       isShare: isShare !== undefined ? isShare : existingNote?.isShare,
-      attachments: attachments !== undefined ? attachments : existingNote?.attachments,
-      metadata: metadata !== undefined ? metadata : existingNote?.metadata,
+      attachments: plainAttachments !== undefined ? plainAttachments : existingNote?.attachments,
+      references: normalizedReferences,
+      metadata: plainMetadata !== undefined ? plainMetadata : existingNote?.metadata,
       updatedAt: nowDate,
       localUpdatedAt: now,
       syncStatus: 'pending' as const
@@ -265,6 +282,22 @@ export class BlinkoStore implements Store {
     const candidate = note.updatedAt ?? note.createdAt;
     const timestamp = candidate ? new Date(candidate as any).getTime() : NaN;
     return Number.isNaN(timestamp) ? Date.now() : timestamp;
+  }
+
+  private getSortTimestamp(note: Note | DBNote) {
+    const orderByCreate = Boolean(this.config.value?.isOrderByCreateTime);
+    const preferred = orderByCreate ? note.createdAt : note.updatedAt;
+    if (preferred) {
+      const preferredTimestamp = new Date(preferred as any).getTime();
+      if (!Number.isNaN(preferredTimestamp)) {
+        return preferredTimestamp;
+      }
+    }
+    const localUpdatedAt = (note as DBNote).localUpdatedAt;
+    if (typeof localUpdatedAt === 'number') {
+      return localUpdatedAt;
+    }
+    return this.getLocalTimestamp(note as Note);
   }
 
   private async cacheServerNotes(notes: Note[]) {
@@ -320,7 +353,10 @@ export class BlinkoStore implements Store {
 
     // Always load cached notes first for offline fallback
     const cachedNotes = await db.notes.toArray();
-    const filteredCachedNotes = cachedNotes.filter(offlineFilter);
+    const sortedCachedNotes = [...cachedNotes].sort(
+      (a, b) => this.getSortTimestamp(b) - this.getSortTimestamp(a)
+    );
+    const filteredCachedNotes = sortedCachedNotes.filter(offlineFilter);
 
     const isBrowserOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
     if (!this.isOnline && !isBrowserOnline) {
@@ -351,14 +387,18 @@ export class BlinkoStore implements Store {
       }
 
       // Merge offline pending notes with online notes (avoid duplicates)
-      const pendingNotes = cachedNotes.filter(note => note.syncStatus !== 'synced');
+      const pendingNotes = cachedNotes
+        .filter(note => note.syncStatus !== 'synced')
+        .sort((a, b) => this.getSortTimestamp(b) - this.getSortTimestamp(a));
       const filteredPendingNotes = pendingNotes.filter(offlineFilter);
       const pendingIds = new Set(filteredPendingNotes.map(note => note.id));
       const mergedNotes = [
         ...filteredPendingNotes.map(note => this.normalizeDbNote(note)),
         ...notes.filter(note => note?.id === undefined || !pendingIds.has(note.id))
       ].map(note => ({ ...note, isExpand: false }));
-      return mergedNotes;
+      return mergedNotes.sort(
+        (a, b) => this.getSortTimestamp(b as Note) - this.getSortTimestamp(a as Note)
+      );
     } catch (error) {
       // Silently fallback to offline notes when fetch fails
       const start = (page - 1) * size;
@@ -448,6 +488,8 @@ export class BlinkoStore implements Store {
 
   async syncOfflineNotes() {
     if (!this.isOnline || this.isSyncing) return;
+    const syncQueueStore = RootStore.Get(SyncQueueStore);
+    if (!syncQueueStore.beginProcessing()) return;
     this.isSyncing = true;
 
     try {
@@ -468,8 +510,10 @@ export class BlinkoStore implements Store {
           if (op.operationType === 'create') {
             // For CREATE: send note to server
             const { id, localUpdatedAt, syncStatus, ...serverData } = noteData;
+            const referenceIds = this.normalizeReferenceIds(serverData.references);
             const result = await api.notes.upsert.mutate({
               ...serverData,
+              references: referenceIds,
               showToast: false
             });
 
@@ -483,8 +527,10 @@ export class BlinkoStore implements Store {
           } else if (op.operationType === 'update') {
             // For UPDATE: send changes to server
             const { localUpdatedAt, syncStatus, ...serverData } = noteData;
+            const referenceIds = this.normalizeReferenceIds(serverData.references);
             await api.notes.upsert.mutate({
               ...serverData,
+              references: referenceIds,
               showToast: false
             });
 
@@ -516,9 +562,10 @@ export class BlinkoStore implements Store {
       }
 
       // Reload queue stats
-      await RootStore.Get(SyncQueueStore).loadQueueStats();
+      await syncQueueStore.loadQueueStats();
     } finally {
       this.isSyncing = false;
+      syncQueueStore.endProcessing();
     }
   }
 

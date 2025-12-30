@@ -35,3 +35,16 @@ export function saveBlinkoEndpoint(endpoint: string): void {
 export function getSavedEndpoint(): string {
     return window.localStorage.getItem('blinkoEndpoint') || '';
 }
+
+export function initBlinkoEndpoint(): void {
+    const isTauri = !!(window as any).__TAURI__;
+    if (isTauri) {
+        const endpoint = window.localStorage.getItem('blinkoEndpoint');
+        if (!endpoint) {
+            // Use default endpoint for LXC server
+            const defaultEndpoint = 'http://192.168.0.118:1111';
+            window.localStorage.setItem('blinkoEndpoint', JSON.stringify(defaultEndpoint));
+            console.log('[Tauri] blinkoEndpoint initialized:', defaultEndpoint);
+        }
+    }
+}

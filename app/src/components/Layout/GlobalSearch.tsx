@@ -390,7 +390,7 @@ export const GlobalSearch = observer(({ isOpen, onOpenChange }: GlobalSearchProp
             {/* Search Results */}
             {store.searchQuery && (
               <div className="mt-2">
-                <LoadingAndEmpty isLoading={store.isSearching} isEmpty={!store.hasResults} />
+                <LoadingAndEmpty isLoading={store.isSearching} isEmpty={!store.hasResults} isAbsolute={false} />
                 <ScrollArea className="max-h-[600px] md:max-h-[400px]" onBottom={() => { }}>
                   <div className="flex flex-col gap-3 px-1">
                     {/* Notes section - only show if not in tag search mode */}

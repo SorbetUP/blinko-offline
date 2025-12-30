@@ -185,7 +185,7 @@ export const ShowEditBlinkoModel = (size: string = '2xl', mode: 'create' | 'edit
     size: size as any,
     isOpen: true,
     onlyContent: true,
-    isDismissable: false,
+    isDismissable: true,
     showOnlyContentCloseButton: true,
     content: <BlinkoEditor isInDialog mode={mode} initialData={initialData} key={`editor-key-${mode}`} onSended={() => {
       RootStore.Get(DialogStore).close()

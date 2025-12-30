@@ -16,23 +16,16 @@ open class BuildTask : DefaultTask() {
 
     @TaskAction
     fun assemble() {
-        // https://github.com/tauri-apps/tauri/issues/9536
-        val executable = if (Os.isFamily(Os.FAMILY_WINDOWS)) {
-            // Try to find bun.exe in PATH first, then fall back to bun.cmd
-            val bunExe = System.getenv("PATH")?.split(File.pathSeparator)
-                ?.map { File(it, "bun.exe") }
-                ?.find { it.exists() }
-            
-            when {
-                bunExe != null -> bunExe.absolutePath
-                File("bun.cmd").exists() -> "bun.cmd"
-                else -> "bun.exe"
+        val executable = """bun""";
+        try {
+            runTauriCli(executable)
+        } catch (e: Exception) {
+            if (Os.isFamily(Os.FAMILY_WINDOWS)) {
+                runTauriCli("$executable.cmd")
+            } else {
+                throw e;
             }
-        } else {
-            "bun"
         }
-        
-        runTauriCli(executable)
     }
 
     fun runTauriCli(executable: String) {
