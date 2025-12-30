@@ -2,6 +2,7 @@
 import { useEffect } from 'react';
 import { PromisePageState, PromiseState } from './standard/PromiseState';
 import { Store } from './standard/base';
+import { db, type DBNote } from '@/lib/db';
 import { helper } from '@/lib/helper';
 import { ToastPlugin } from './module/Toast/Toast';
 import { RootStore } from './root';
@@ -15,6 +16,7 @@ import { makeAutoObservable } from 'mobx';
 import { UserStore } from './user';
 import { BaseStore } from './baseStore';
 import { StorageState } from './standard/StorageState';
+import { SyncQueueStore } from './sync/syncQueueStore';
 import { useSearchParams, useLocation } from 'react-router-dom';
 
 type filterType = {
@@ -85,6 +87,7 @@ export class BlinkoStore implements Store {
   curMultiSelectIds: number[] = [];
   isMultiSelectMode: boolean = false;
   forceQuery: number = 0;
+  isSyncing: boolean = false;
   allTagRouter = {
     title: 'total',
     href: '/?path=all',
@@ -130,6 +133,53 @@ export class BlinkoStore implements Store {
     return RootStore.Get(BaseStore).isOnline;
   }
 
+  private normalizeDbNote(note: DBNote) {
+    const syncStatus = note.syncStatus ?? 'synced';
+    return {
+      ...note,
+      isOffline: syncStatus !== 'synced',
+      isExpand: false
+    };
+  }
+
+  private getLocalTimestamp(note: Note) {
+    const candidate = note.updatedAt ?? note.createdAt;
+    const timestamp = candidate ? new Date(candidate as any).getTime() : NaN;
+    return Number.isNaN(timestamp) ? Date.now() : timestamp;
+  }
+
+  private async cacheServerNotes(notes: Note[]) {
+    if (!notes?.length) return;
+
+    const ids = notes
+      .map(note => note?.id)
+      .filter((id): id is number => typeof id === 'number');
+
+    if (ids.length === 0) return;
+
+    const localNotes = await db.notes.where('id').anyOf(ids).toArray();
+    const localById = new Map(localNotes.map(note => [note.id, note]));
+    const toCache: DBNote[] = [];
+
+    for (const note of notes) {
+      if (typeof note?.id !== 'number') continue;
+      const local = localById.get(note.id);
+      if (local && local.syncStatus !== 'synced') {
+        continue;
+      }
+
+      toCache.push({
+        ...note,
+        localUpdatedAt: this.getLocalTimestamp(note),
+        syncStatus: 'synced' as const
+      } as DBNote);
+    }
+
+    if (toCache.length > 0) {
+      await db.notes.bulkPut(toCache);
+    }
+  }
+
   private saveOfflineNote(note: OfflineNote) {
     this.offlineNoteStorage.push(note);
   }
@@ -145,43 +195,63 @@ export class BlinkoStore implements Store {
     page: number;
     size: number;
     filterConfig: any;
-    offlineFilter?: (note: OfflineNote) => boolean | undefined;
+    offlineFilter?: (note: any) => boolean | undefined;
   }) {
     const { page, size, filterConfig, offlineFilter = () => true } = params;
-    let notes: Note[] = [];
 
-    if (this.isOnline) {
-      const queryParams = { 
-        ...this.noteListFilterConfig, 
-        ...filterConfig,
-        searchText: this.searchText, 
-        page, 
-        size 
-      };
-      notes = await api.notes.list.mutate(queryParams);
-
-      
-      if (this.offlineNotes.length > 0) {
-        await this.syncOfflineNotes();
-      }
-    }
-
-    const filteredOfflineNotes = this.offlineNotes.filter(offlineFilter);
-    const mergedNotes = [...filteredOfflineNotes, ...notes].map(i => ({ ...i, isExpand: false }));
+    // Always load cached notes first for offline fallback
+    const cachedNotes = await db.notes.toArray();
+    const filteredCachedNotes = cachedNotes.filter(offlineFilter);
 
     if (!this.isOnline) {
+      // Pure offline mode
       const start = (page - 1) * size;
       const end = start + size;
-      return mergedNotes.slice(start, end);
+      return filteredCachedNotes
+        .slice(start, end)
+        .map(note => this.normalizeDbNote(note));
     }
 
-    return mergedNotes;
+    // Try online fetch
+    try {
+      const queryParams = {
+        ...this.noteListFilterConfig,
+        ...filterConfig,
+        searchText: this.searchText,
+        page,
+        size
+      };
+      const notes = await api.notes.list.mutate(queryParams);
+      await this.cacheServerNotes(notes);
+
+      // Trigger sync if there are pending offline operations
+      const pendingCount = await db.syncQueue.where('status').equals('pending').count();
+      if (pendingCount > 0) {
+        await this.syncOfflineNotes();
+      }
+
+      // Merge offline pending notes with online notes (avoid duplicates)
+      const pendingNotes = cachedNotes.filter(note => note.syncStatus !== 'synced');
+      const filteredPendingNotes = pendingNotes.filter(offlineFilter);
+      const pendingIds = new Set(filteredPendingNotes.map(note => note.id));
+      const mergedNotes = [
+        ...filteredPendingNotes.map(note => this.normalizeDbNote(note)),
+        ...notes.filter(note => note?.id === undefined || !pendingIds.has(note.id))
+      ].map(note => ({ ...note, isExpand: false }));
+      return mergedNotes;
+    } catch (error) {
+      // Silently fallback to offline notes when fetch fails
+      const start = (page - 1) * size;
+      const end = start + size;
+      return filteredCachedNotes
+        .slice(start, end)
+        .map(note => this.normalizeDbNote(note));
+    }
   }
 
   upsertNote = new PromiseState({
     eventKey: 'upsertNote',
     function: async (params: UpsertNoteParams) => {
-      console.log("upsertNote", params)
       const {
         content = null,
         isArchived,
@@ -199,29 +269,94 @@ export class BlinkoStore implements Store {
         metadata
       } = params;
 
-      if (!this.isOnline && !id) {
-        const now = new Date();
-        const offlineNote: OfflineNote = {
-          id: now.getTime(),
-          content: content || '',
-          type,
-          isArchived: !!isArchived,
-          isRecycle: !!isRecycle,
-          attachments: attachments || [],
-          isTop: !!isTop,
-          isShare: !!isShare,
-          references: references.map(refId => ({ toNoteId: refId })),
-          createdAt: now,
-          updatedAt: now,
-          isOffline: true,
-          pendingSync: true,
-          tags: [],
-          metadata: metadata || {}
-        };
+      // Offline mode: save to IndexedDB and queue for sync
+      if (!this.isOnline) {
+        const now = Date.now();
+        const nowDate = new Date(now);
 
-        this.saveOfflineNote(offlineNote);
-        showToast && RootStore.Get(ToastPlugin).success(i18n.t("create-successfully") + '-' + i18n.t("offline-status"));
-        return offlineNote;
+        if (!id) {
+          // CREATE: new note offline
+          const dbNote = {
+            id: now,
+            accountId: Number(RootStore.Get(UserStore).id),
+            content: content || '',
+            type,
+            isArchived: !!isArchived,
+            isRecycle: !!isRecycle,
+            attachments: attachments || [],
+            isTop: !!isTop,
+            isShare: !!isShare,
+            references: references.map(refId => ({ toNoteId: refId })),
+            createdAt: nowDate,
+            updatedAt: nowDate,
+            tags: [],
+            metadata: metadata || {},
+            localUpdatedAt: now,
+            syncStatus: 'pending' as const
+          };
+
+          try {
+            await db.notes.add(dbNote);
+          } catch (error) {
+            console.error('[OFFLINE] Failed to save note to IndexedDB:', error);
+            RootStore.Get(ToastPlugin).addToast({
+              type: 'error',
+              title: i18n.t('error'),
+              description: 'Impossible de sauvegarder la note localement'
+            });
+            throw error;
+          }
+          await RootStore.Get(SyncQueueStore).enqueue({
+            operationType: 'create',
+            entityType: 'note',
+            entityId: dbNote.id,
+            data: dbNote,
+            status: 'pending'
+          });
+          showToast && RootStore.Get(ToastPlugin).success(i18n.t("create-successfully") + '-' + i18n.t("offline-status"));
+          refresh && this.updateTicker++;
+          return dbNote;
+        } else {
+          // UPDATE: existing note offline
+          const existingNote = await db.notes.get(id);
+          const updatedNote = {
+            ...existingNote,
+            accountId: existingNote?.accountId || Number(RootStore.Get(UserStore).id),
+            content: content !== undefined ? content : existingNote?.content,
+            type: type !== undefined ? type : existingNote?.type,
+            isArchived: isArchived !== undefined ? isArchived : existingNote?.isArchived,
+            isRecycle: isRecycle !== undefined ? isRecycle : existingNote?.isRecycle,
+            isTop: isTop !== undefined ? isTop : existingNote?.isTop,
+            isShare: isShare !== undefined ? isShare : existingNote?.isShare,
+            attachments: attachments !== undefined ? attachments : existingNote?.attachments,
+            metadata: metadata !== undefined ? metadata : existingNote?.metadata,
+            updatedAt: nowDate,
+            localUpdatedAt: now,
+            syncStatus: 'pending' as const
+          };
+
+          try {
+            await db.notes.put(updatedNote as any);
+          } catch (error) {
+            console.error('[OFFLINE] Failed to update note in IndexedDB:', error);
+            RootStore.Get(ToastPlugin).addToast({
+              type: 'error',
+              title: i18n.t('error'),
+              description: 'Impossible de mettre à jour la note localement'
+            });
+            throw error;
+          }
+          await RootStore.Get(SyncQueueStore).enqueue({
+            operationType: 'update',
+            entityType: 'note',
+            entityId: id,
+            data: updatedNote,
+            status: 'pending'
+          });
+          showToast && RootStore.Get(ToastPlugin).success(i18n.t("update-successfully") + '-' + i18n.t("offline-status"));
+          refresh && this.updateTicker++;
+          return updatedNote;
+        }
       }
 
       const res = await api.notes.upsert.mutate({
@@ -270,26 +405,79 @@ export class BlinkoStore implements Store {
   })
 
   async syncOfflineNotes() {
-    if (!this.isOnline) return;
+    if (!this.isOnline || this.isSyncing) return;
+    this.isSyncing = true;
 
-    const offlineNotes = [...this.offlineNotes];
-    for (const note of offlineNotes) {
-      if (note.pendingSync) {
-        try {
-          const { id, isOffline, pendingSync, references, ...noteData } = note;
-          const onlineNote: UpsertNoteParams = {
-            ...noteData,
-            references: references.map(ref => ref.toNoteId),
-            showToast: false
-          };
-          await this.upsertNote.call(onlineNote);
-          this.removeOfflineNote(id);
-        } catch (error) {
-          console.error('Failed to sync offline note:', error);
+    try {
+      // Get all pending sync operations from the queue
+      const pendingOps = await db.syncQueue
+        .where('status')
+        .equals('pending')
+        .sortBy('timestamp');
+
+      for (const op of pendingOps) {
+      try {
+        // Update status to in_progress
+        await db.syncQueue.update(op.id!, { status: 'in_progress' as const });
+
+        if (op.entityType === 'note') {
+          const noteData = op.data as any;
+
+          if (op.operationType === 'create') {
+            // For CREATE: send note to server
+            const { id, localUpdatedAt, syncStatus, ...serverData } = noteData;
+            const result = await api.notes.upsert.mutate({
+              ...serverData,
+              showToast: false
+            });
+
+            // Update local note with server ID and mark as synced
+            await db.notes.delete(id);
+            await db.notes.put({
+              ...result,
+              localUpdatedAt: Date.now(),
+              syncStatus: 'synced' as const
+            });
+          } else if (op.operationType === 'update') {
+            // For UPDATE: send changes to server
+            const { localUpdatedAt, syncStatus, ...serverData } = noteData;
+            await api.notes.upsert.mutate({
+              ...serverData,
+              showToast: false
+            });
+
+            // Mark as synced
+            await db.notes.update(noteData.id, {
+              syncStatus: 'synced' as const
+            });
+          } else if (op.operationType === 'delete') {
+            // For DELETE: just remove from IndexedDB (server already handles via isRecycle)
+            // The delete is actually an UPDATE with isRecycle: true
+          }
+        }
+
+        // Remove successfully synced operation from queue
+        await db.syncQueue.delete(op.id!);
+
+      } catch (error) {
+        console.error('Failed to sync operation:', error);
+
+        // Mark as failed and increment retry count
+        const currentOp = await db.syncQueue.get(op.id!);
+        if (currentOp) {
+          await db.syncQueue.update(op.id!, {
+            status: 'failed' as const,
+            retryCount: currentOp.retryCount + 1
+          });
         }
       }
+      }
+
+      // Reload queue stats
+      await RootStore.Get(SyncQueueStore).loadQueueStats();
+    } finally {
+      this.isSyncing = false;
     }
-    this.updateTicker++;
   }
 
   blinkoList = new PromisePageState({
@@ -407,7 +595,19 @@ export class BlinkoStore implements Store {
 
   noteDetail = new PromiseState({
     function: async ({ id }) => {
-      return await api.notes.detail.mutate({ id })
+      if (!this.isOnline) {
+        const localNote = await db.notes.get(id);
+        return localNote ? this.normalizeDbNote(localNote) : null;
+      }
+
+      try {
+        const note = await api.notes.detail.mutate({ id });
+        await this.cacheServerNotes([note]);
+        return note;
+      } catch (error) {
+        const localNote = await db.notes.get(id);
+        return localNote ? this.normalizeDbNote(localNote) : null;
+      }
     }
   })
 
@@ -433,7 +633,6 @@ export class BlinkoStore implements Store {
     function: async () => {
       const falttenTags = await api.tags.list.query(undefined, { context: { skipBatch: true } });
       const listTags = helper.buildHashTagTreeFromDb(falttenTags)
-      console.log(falttenTags, 'listTags')
       let pathTags: string[] = [];
       listTags.forEach(node => {
         pathTags = pathTags.concat(helper.generateTagPaths(node));
@@ -533,7 +732,15 @@ export class BlinkoStore implements Store {
     this.updateTicker++
   }
 
-  firstLoad() {
+  async firstLoad() {
+    // Fix notes without accountId (migration)
+    try {
+      const { fixNotesWithoutAccountId } = await import('@/lib/db/migrate');
+      await fixNotesWithoutAccountId(Number(RootStore.Get(UserStore).id));
+    } catch (error) {
+      console.error('Failed to fix notes without accountId:', error);
+    }
+
     this.tagList.call()
     this.config.call()
     this.dailyReviewNoteList.call()
@@ -572,14 +779,12 @@ export class BlinkoStore implements Store {
   use() {
     useEffect(() => {
       if (RootStore.Get(UserStore).id) {
-        console.log('firstLoad', RootStore.Get(UserStore).id)
         this.firstLoad()
       }
     }, [RootStore.Get(UserStore).id])
 
     useEffect(() => {
       if (this.updateTicker == 0) return
-      console.log('updateTicker', this.updateTicker)
       this.refreshData()
     }, [this.updateTicker])
   }

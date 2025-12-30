@@ -6,6 +6,8 @@ import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMediaQuery } from 'usehooks-ts';
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
+import { eventBus } from '@/lib/event';
+import { getBlinkoEndpoint } from '@/lib/blinkoEndpoint';
 export class BaseStore implements Store {
   sid = 'BaseStore';
   constructor() {
@@ -112,11 +114,38 @@ export class BaseStore implements Store {
     this.locale.save(locale);
   }
 
-  isOnline: boolean = typeof window !== 'undefined' ? window.navigator.onLine : true;
+  isOnline: boolean = false;
+  isCheckingConnectivity: boolean = false;
 
   setOnlineStatus = (status: boolean) => {
+    if (this.isOnline === status) {
+      return;
+    }
     this.isOnline = status;
+    eventBus.emit(status ? 'online' : 'offline');
   };
+
+  async checkConnectivity() {
+    if (this.isCheckingConnectivity) return;
+    this.isCheckingConnectivity = true;
+
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 3000);
+
+      const response = await fetch(getBlinkoEndpoint('/health'), {
+        signal: controller.signal,
+        method: 'HEAD'
+      });
+      clearTimeout(timeout);
+
+      this.setOnlineStatus(response.ok);
+    } catch (error) {
+      this.setOnlineStatus(false);
+    } finally {
+      this.isCheckingConnectivity = false;
+    }
+  }
 
   useInitApp() {
     const isPc = useMediaQuery('(min-width: 768px)');
@@ -132,14 +161,35 @@ export class BaseStore implements Store {
     };
 
     useEffect(() => {
-      const handleOnline = () => this.setOnlineStatus(true);
+      const handleOnline = async () => {
+        await this.checkConnectivity();
+        // Trigger auto-sync when coming back online
+        if (this.isOnline) {
+          try {
+            const { BlinkoStore } = await import('./blinkoStore');
+            const blinkoStore = RootStore.Get(BlinkoStore);
+            await blinkoStore.syncOfflineNotes();
+          } catch (error) {
+            console.error('Auto-sync failed:', error);
+          }
+        }
+      };
       const handleOffline = () => this.setOnlineStatus(false);
+
+      // Initial connectivity check
+      this.checkConnectivity();
+
+      // Periodic connectivity check (every 30s)
+      const connectivityInterval = setInterval(() => {
+        this.checkConnectivity();
+      }, 30000);
 
       window.addEventListener('online', handleOnline);
       window.addEventListener('offline', handleOffline);
       documentHeight();
       window.addEventListener('resize', documentHeight);
       return () => {
+        clearInterval(connectivityInterval);
         window.removeEventListener('online', handleOnline);
         window.removeEventListener('offline', handleOffline);
         window.removeEventListener('resize', documentHeight);

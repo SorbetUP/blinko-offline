@@ -56,6 +56,7 @@ export async function getTokenData(): Promise<TokenData | null> {
   try {
     const userStore = RootStore.Get(UserStore);
     const token = userStore.token;
+    const cachedTokenData = userStore.tokenData.value;
     
     if (!token) {
       return null;
@@ -73,11 +74,11 @@ export async function getTokenData(): Promise<TokenData | null> {
       eventBus.emit('user:token', data);
       return data;
     }
-    
-    return null;
+    return cachedTokenData ?? null;
   } catch (error) {
     console.error('Failed to get token data:', error);
-    return null;
+    const userStore = RootStore.Get(UserStore);
+    return userStore.tokenData.value ?? null;
   }
 }
 
