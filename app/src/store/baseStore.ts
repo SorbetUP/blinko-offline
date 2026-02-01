@@ -6,6 +6,7 @@ import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMediaQuery } from 'usehooks-ts';
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
+import { isInTauri } from '@/lib/tauriHelper';
 export class BaseStore implements Store {
   sid = 'BaseStore';
   constructor() {
@@ -112,10 +113,39 @@ export class BaseStore implements Store {
     this.locale.save(locale);
   }
 
-  isOnline: boolean = typeof window !== 'undefined' ? window.navigator.onLine : true;
+  isOnline: boolean = (() => {
+    if (typeof window === 'undefined') return true;
+    if (isInTauri()) return true;
+    return window.navigator.onLine;
+  })();
 
   setOnlineStatus = (status: boolean) => {
+    if (isInTauri()) {
+      this.isOnline = true;
+      return;
+    }
     this.isOnline = status;
+  };
+
+  setOnlineStatusFromSuccess = () => {
+    if (!this.isOnline) {
+      this.setOnlineStatus(true);
+    }
+  };
+
+  setOnlineStatusFromError = (error: unknown) => {
+    if (isInTauri()) return;
+    if (typeof window === 'undefined') return;
+    if (!window.navigator.onLine) {
+      this.setOnlineStatus(false);
+      return;
+    }
+
+    const message = String((error as any)?.message ?? error ?? '');
+    const isNetworkError = /failed to fetch|networkerror|load failed|timeout|net::/i.test(message);
+    if (isNetworkError) {
+      this.setOnlineStatus(false);
+    }
   };
 
   useInitApp() {
@@ -132,16 +162,24 @@ export class BaseStore implements Store {
     };
 
     useEffect(() => {
+      const shouldTrackNetwork = !isInTauri();
       const handleOnline = () => this.setOnlineStatus(true);
       const handleOffline = () => this.setOnlineStatus(false);
 
-      window.addEventListener('online', handleOnline);
-      window.addEventListener('offline', handleOffline);
+      if (shouldTrackNetwork) {
+        window.addEventListener('online', handleOnline);
+        window.addEventListener('offline', handleOffline);
+      } else {
+        this.setOnlineStatus(true);
+      }
+
       documentHeight();
       window.addEventListener('resize', documentHeight);
       return () => {
-        window.removeEventListener('online', handleOnline);
-        window.removeEventListener('offline', handleOffline);
+        if (shouldTrackNetwork) {
+          window.removeEventListener('online', handleOnline);
+          window.removeEventListener('offline', handleOffline);
+        }
         window.removeEventListener('resize', documentHeight);
       };
     }, [navigate]);

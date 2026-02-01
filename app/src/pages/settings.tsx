@@ -10,6 +10,7 @@ import { RootStore } from '@/store';
 import { UserSetting } from '@/components/BlinkoSettings/UserSetting';
 import { AboutSetting } from '@/components/BlinkoSettings/AboutSetting';
 import { StorageSetting } from '@/components/BlinkoSettings/StorageSetting';
+import { SyncSetting } from '@/components/BlinkoSettings/SyncSetting';
 import { ExportSetting } from '@/components/BlinkoSettings/ExportSetting';
 import { MusicSetting } from '@/components/BlinkoSettings/MusicSetting';
 import { SSOSetting } from '@/components/BlinkoSettings/SSOSetting';
@@ -98,6 +99,14 @@ export const allSettings: SettingItem[] = [
     component: <StorageSetting />,
     requireAdmin: true,
     keywords: ['storage', 'database', '存储', '数据库'],
+  },
+  {
+    key: 'sync',
+    title: ('sync-settings'),
+    icon: 'fluent:arrow-sync-24-filled',
+    component: <SyncSetting />,
+    requireAdmin: false,
+    keywords: ['sync', 'offline', 'remote', '同步', '离线', '远程'],
   },
   {
     key: 'music',

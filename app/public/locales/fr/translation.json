@@ -848,5 +848,19 @@
   "enable-signin-footer": "Activer le pied de page de connexion",
   "signin-footer-text": "Contenu du pied de page de connexion",
   "signin-footer-desc": "Prend en charge HTML: <a href='...'>lien</a>, <strong>gras</strong>, <em>italique</em>, <br/>",
-  "signin-footer-placeholder": "Exemple: <a href='https://blinko.space/'>Blinko</a> © 2026 Blinko. Tous droits réservés."
+  "signin-footer-placeholder": "Exemple: <a href='https://blinko.space/'>Blinko</a> © 2026 Blinko. Tous droits réservés.",
+  "sync-settings": "Synchronisation",
+  "sync-enabled": "Activer la synchronisation",
+  "sync-endpoint": "Endpoint du serveur distant",
+  "sync-username": "Nom d'utilisateur distant",
+  "sync-password": "Mot de passe distant",
+  "sync-status": "Statut de synchronisation",
+  "sync-connect": "Connecter",
+  "sync-now": "Synchroniser maintenant",
+  "sync-connected": "Connecté",
+  "sync-disconnected": "Déconnecté",
+  "sync-missing-fields": "Veuillez renseigner l'endpoint, l'utilisateur et le mot de passe",
+  "sync-started": "Synchronisation lancée",
+  "sync-remote-url": "URL distante",
+  "sync-remote-not-set": "Serveur distant non défini"
 }

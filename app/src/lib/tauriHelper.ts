@@ -70,8 +70,13 @@ export async function downloadFromLink(uri: string, filename?: string) {
         RootStore.Get(ToastPlugin).loading(i18n.t('downloading'), { id: 'downloading' })
 
         if (!filename) {
-            const url = new URL(uri);
-            filename = url.pathname.split('/').pop() || 'downloaded_file';
+            try {
+                const url = new URL(uri);
+                filename = url.pathname.split('/').pop() || 'downloaded_file';
+            } catch (error) {
+                console.error('[downloadFromLink] invalid url', { uri, error: error instanceof Error ? error.message : String(error) });
+                filename = 'downloaded_file';
+            }
         }
 
         const token = RootStore.Get(UserStore).tokenData.value?.token;

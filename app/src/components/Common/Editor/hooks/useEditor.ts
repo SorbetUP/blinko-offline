@@ -17,6 +17,7 @@ import { NoteType, toNoteTypeEnum } from '@shared/lib/types';
 import { api } from '@/lib/trpc';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { getBlinkoEndpoint } from '@/lib/blinkoEndpoint';
+import { isInTauri } from '@/lib/tauriHelper';
 import * as echarts from 'echarts';
 import { FontManager } from '@/lib/fontManager';
 // Expose echarts globally for vditor chartRender
@@ -110,7 +111,7 @@ const renderAllVditorContent = (
     editorElement = element as HTMLElement;
   }
 
-  const cdn = getBlinkoEndpoint('').replace(/\/$/, "");
+  const cdn = (isInTauri() ? window.location.origin : getBlinkoEndpoint('')).replace(/\/$/, "");
   const styleName = getHighlightStyle(theme);
 
   // Update CSS link (ensure it's loaded before rendering)
@@ -374,7 +375,7 @@ export const useEditorInit = (
 
     // Use currentTheme from useTheme hook, fallback to UserStore if not ready
     const theme = currentTheme || RootStore.Get(UserStore).theme || 'light';
-    const cdn = getBlinkoEndpoint('').replace(/\/$/, "");
+    const cdn = (isInTauri() ? window.location.origin : getBlinkoEndpoint('')).replace(/\/$/, "");
     
     // Pre-load CSS before vditor initialization to ensure it's ready when code blocks render
     // This is key: load CSS before vditor initialization to ensure styles are available when code highlighting renders
@@ -500,7 +501,7 @@ export const useEditorInit = (
   // Update vditor theme configuration when theme changes
   useEffect(() => {
     if (store.vditor && currentTheme) {
-      const cdn = getBlinkoEndpoint('').replace(/\/$/, "");
+      const cdn = (isInTauri() ? window.location.origin : getBlinkoEndpoint('')).replace(/\/$/, "");
       
       // Update CSS link
       updateHighlightCSS(currentTheme, cdn);

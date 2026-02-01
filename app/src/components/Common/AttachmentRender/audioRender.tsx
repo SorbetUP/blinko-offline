@@ -39,8 +39,18 @@ export const AudioRender = observer(({ files, preview = false }: Props) => {
 
   const getMetadata = async (file: FileType) => {
     try {
+      const previewUrl = file.preview.includes('s3file')
+        ? (() => {
+            try {
+              return new URL(file.preview, window.location.href).href;
+            } catch (error) {
+              console.error('[AudioRender] invalid preview url', { preview: file.preview, error: error instanceof Error ? error.message : String(error) });
+              return file.preview;
+            }
+          })()
+        : file.preview;
       const metadata = await api.public.musicMetadata.query({
-        filePath: file.preview.includes('s3file') ? new URL(file.preview, window.location.href).href : file.preview
+        filePath: previewUrl
       });
       setAudioMetadata(prev => ({
         ...prev,

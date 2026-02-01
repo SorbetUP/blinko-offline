@@ -1,0 +1,46 @@
+Application launched normally
+Restored window size: 2984x1858
+Window centered successfully
+Main window shown after state restoration
+Window state monitoring setup ONLY for main window
+System tray setup successfully
+Waiting for frontend to register shortcuts based on user configuration...
+Saved window state to: /Users/sorbet/Library/Application Support/com.blinko.app/window_state.json
+Saved main window state: 3024x1898, maximized: true
+Saved window state to: /Users/sorbet/Library/Application Support/com.blinko.app/window_state.json
+Saved main window state: 2984x1858, maximized: false
+Set main window theme to: dark
+Set main window background color to: Color(28, 28, 30, 255)
+Set main window theme to: dark
+Set main window background color to: Color(28, 28, 30, 255)
+Set main window theme to: dark
+Set main window background color to: Color(28, 28, 30, 255)
+Set main window theme to: dark
+Set main window background color to: Color(28, 28, 30, 255)
+Set main window theme to: dark
+Set main window background color to: Color(28, 28, 30, 255)
+Set main window theme to: dark
+Set main window background color to: Color(28, 28, 30, 255)
+Set main window theme to: dark
+Set main window background color to: Color(28, 28, 30, 255)
+Set main window theme to: dark
+Set main window background color to: Color(28, 28, 30, 255)
+Resized quickai window to 600x208 (requested: 208)
+Resized quicknote window to 600x100 (requested: 56)
+Successfully registered shortcut: Shift+Space for command: quicknote
+Successfully registered shortcut: Alt+Space for command: quickai
+🔧 setup_text_selection_monitoring called: enabled=true, modifier=none
+📝 Registering shortcut: Control+Backquote
+✅ Text selection monitoring enabled with none + Backquote
+Successfully registered shortcut: Shift+Space for command: quicknote
+Successfully registered shortcut: Shift+Space for command: quicknote
+Successfully registered shortcut: Alt+Space for command: quickai
+Successfully registered shortcut: Alt+Space for command: quickai
+🔧 setup_text_selection_monitoring called: enabled=true, modifier=none
+📝 Registering shortcut: Control+Backquote
+🔧 setup_text_selection_monitoring called: enabled=true, modifier=none
+📝 Registering shortcut: Control+Backquote
+Successfully registered shortcut: Shift+Space for command: quicknote
+Successfully registered shortcut: Alt+Space for command: quickai
+🔧 setup_text_selection_monitoring called: enabled=true, modifier=none
+📝 Registering shortcut: Control+Backquote

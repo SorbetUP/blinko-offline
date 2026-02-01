@@ -837,5 +837,19 @@
   "enable-signin-footer": "Enable Signin Footer",
   "signin-footer-text": "Signin Footer Content",
   "signin-footer-desc": "Supports HTML: <a href='...'>link</a>, <strong>bold</strong>, <em>italic</em>, <br/>",
-  "signin-footer-placeholder": "e.g., <a href='https://blinko.space/'>Blinko</a> © 2026 Blinko. All rights reserved."
+  "signin-footer-placeholder": "e.g., <a href='https://blinko.space/'>Blinko</a> © 2026 Blinko. All rights reserved.",
+  "sync-settings": "Sync",
+  "sync-enabled": "Enable Sync",
+  "sync-endpoint": "Remote Server Endpoint",
+  "sync-username": "Remote Username",
+  "sync-password": "Remote Password",
+  "sync-status": "Sync Status",
+  "sync-connect": "Connect",
+  "sync-now": "Sync Now",
+  "sync-connected": "Connected",
+  "sync-disconnected": "Disconnected",
+  "sync-missing-fields": "Please fill endpoint, username and password",
+  "sync-started": "Sync started",
+  "sync-remote-url": "Remote URL",
+  "sync-remote-not-set": "Remote server not set"
 }

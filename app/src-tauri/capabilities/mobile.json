@@ -30,6 +30,8 @@
     "fs:default",
     "dialog:default",
     "fs:allow-app-write",
+    "sql:default",
+    "sql:allow-execute",
     "blinko:default",
     "core:window:allow-center",
     {

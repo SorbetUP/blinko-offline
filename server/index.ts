@@ -154,7 +154,7 @@ async function setupApiRoutes(app: express.Application) {
   // Helper function to serve vditor dependencies with gzip compression
   const serveVditorFile = (routePath: string, filePath: string) => {
     app.use(routePath, (req, res) => {
-      const fullPath = path.resolve(__dirname, filePath);
+      const fullPath = path.resolve(appRootProd, filePath);
       
       // Check if file exists
       if (!fs.existsSync(fullPath)) {
