@@ -36,10 +36,10 @@ export const ShowEditTimeModel = (showExpired: boolean = false) => {
     showOnlyContentCloseButton: true,
     content: () => {
       const [createdAt, setCreatedAt] = useState(blinko.curSelectedNote?.createdAt ?
-        parseAbsoluteToLocal(blinko.curSelectedNote.createdAt.toISOString()) : null);
+        parseAbsoluteToLocal(new Date(blinko.curSelectedNote.createdAt as any).toISOString()) : null);
 
       const [updatedAt, setUpdatedAt] = useState(blinko.curSelectedNote?.updatedAt ?
-        parseAbsoluteToLocal(blinko.curSelectedNote.updatedAt.toISOString()) : null);
+        parseAbsoluteToLocal(new Date(blinko.curSelectedNote.updatedAt as any).toISOString()) : null);
 
       const [expireAt, setExpireAt] = useState(blinko.curSelectedNote?.metadata?.expireAt ?
         parseAbsoluteToLocal(new Date(blinko.curSelectedNote.metadata.expireAt).toISOString()) : null);

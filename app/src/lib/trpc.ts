@@ -1,7 +1,8 @@
-import { createTRPCClient, httpBatchLink, httpLink, splitLink, httpBatchStreamLink } from '@trpc/client';
+import { createTRPCClient, httpBatchLink, httpLink, splitLink, httpBatchStreamLink, type TRPCLink } from '@trpc/client';
+import { observable } from '@trpc/server/observable';
 import type { AppRouter } from '../../../server/routerTrpc/_app';
 import superjson from 'superjson';
-import { getBlinkoEndpoint } from './blinkoEndpoint';
+import { getBlinkoEndpoint, isLocalMode, isLocalHttpUnavailable } from './blinkoEndpoint';
 import { RootStore } from '@/store';
 import { UserStore } from '@/store/user';
 const headers = () => {
@@ -16,13 +17,81 @@ const headers = () => {
   return baseHeaders;
 };
 
+const localInvokeLink: TRPCLink<AppRouter> = () => {
+  return ({ op }) => {
+    return observable((observer) => {
+      (async () => {
+        try {
+          const data = await invokeLocal(op.path, op.input);
+          observer.next({
+            context: {},
+            result: { type: 'data', data }
+          });
+          observer.complete();
+        } catch (error) {
+          observer.error(error as Error);
+        }
+      })();
+      return () => {};
+    });
+  };
+};
+
+const invokeLocal = async (path: string, input: unknown) => {
+  const { invoke } = await import('@tauri-apps/api/core');
+  if (path === 'notes.list') {
+    return await invoke('notes_list', { input });
+  }
+  if (path === 'notes.detail') {
+    const id = (input as any)?.id ?? 0;
+    return await invoke('note_get', { id });
+  }
+  if (path === 'notes.upsert') {
+    return await invoke('note_upsert', { input });
+  }
+  if (path === 'notes.deleteMany' || path === 'notes.trashMany') {
+    const ids = (input as any)?.ids ?? [];
+    for (const id of ids) {
+      await invoke('note_delete', { id });
+    }
+    return { ok: true };
+  }
+
+  // Fallbacks for unsupported commands in command-only mode
+  if (path.endsWith('list') || path.endsWith('List')) return [];
+  if (path.endsWith('detail') || path.endsWith('Detail')) return null;
+  return { ok: true };
+};
+
+
+const getTransformer = () => {
+  return isLocalMode() ? undefined : superjson;
+};
 
 const getLinks = (useStream = false) => {
   try {
+    if (isLocalMode() && isLocalHttpUnavailable()) {
+      return localInvokeLink();
+    }
+
+    if (isLocalMode()) {
+      return httpLink({
+        url: getBlinkoEndpoint('/api/trpc'),
+        transformer: getTransformer(),
+        headers,
+        fetch(url, options) {
+          return fetch(url, {
+            ...options,
+            signal: AbortSignal.timeout(5 * 60 * 1000)
+          });
+        }
+      });
+    }
+
     if (useStream) {
       return httpBatchStreamLink({
         url: getBlinkoEndpoint('/api/trpc'),
-        transformer: superjson,
+        transformer: getTransformer(),
         headers,
         // Increase timeout for large file uploads (5 minutes)
         fetch(url, options) {
@@ -40,7 +109,7 @@ const getLinks = (useStream = false) => {
       },
       true: httpLink({
         url: getBlinkoEndpoint('/api/trpc'),
-        transformer: superjson,
+        transformer: getTransformer(),
         headers,
         // Increase timeout for large file uploads (5 minutes)
         fetch(url, options) {
@@ -53,7 +122,7 @@ const getLinks = (useStream = false) => {
       // when condition is false, use batching
       false: httpBatchLink({
         url: getBlinkoEndpoint('/api/trpc'),
-        transformer: superjson,
+        transformer: getTransformer(),
         headers,
         // Increase timeout for large file uploads (5 minutes)
         fetch(url, options) {
@@ -72,7 +141,7 @@ const getLinks = (useStream = false) => {
       },
       true: httpLink({
         url: ('/api/trpc'),
-        transformer: superjson,
+        transformer: getTransformer(),
         headers,
         // Increase timeout for large file uploads (5 minutes)
         fetch(url, options) {
@@ -85,7 +154,7 @@ const getLinks = (useStream = false) => {
       // when condition is false, use batching
       false: httpBatchLink({
         url: ('/api/trpc'),
-        transformer: superjson,
+        transformer: getTransformer(),
         headers,
         // Increase timeout for large file uploads (5 minutes)
         fetch(url, options) {
@@ -126,4 +195,3 @@ export const reinitializeTrpcApi = () => {
 
   return { api, streamApi };
 };
-

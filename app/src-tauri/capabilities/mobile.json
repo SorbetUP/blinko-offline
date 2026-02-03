@@ -40,6 +40,12 @@
         },
         {
           "path": "$DOWNLOAD/**"
+        },
+        {
+          "path": "$APPDATA"
+        },
+        {
+          "path": "$APPDATA/**"
         }
       ]
     },
@@ -48,6 +54,9 @@
       "allow": [
         {
           "path": "$DOWNLOAD"
+        },
+        {
+          "path": "$APPDATA"
         }
       ]
     },

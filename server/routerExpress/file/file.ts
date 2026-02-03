@@ -8,6 +8,7 @@ import crypto from 'crypto';
 import sharp from 'sharp';
 import { prisma } from '../../prisma';
 import { getTokenFromRequest } from '../../lib/helper';
+import { FileService } from '../../lib/files';
 
 const router = express.Router();
 const STREAM_THRESHOLD = 5 * 1024 * 1024;
@@ -84,6 +85,62 @@ let activeStreams = 0;
  *     security:
  *       - bearer: []
  */
+//@ts-ignore
+router.get('/by-sync-id/:syncId', async (req, res) => {
+  const token = await getTokenFromRequest(req);
+  if (!token) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  const syncId = req.params.syncId;
+  if (!syncId) {
+    return res.status(400).json({ error: "Missing syncId" });
+  }
+
+  const attachment = await prisma.attachments.findFirst({
+    where: {
+      syncId,
+      accountId: Number(token.id)
+    }
+  });
+
+  if (!attachment) {
+    return res.status(404).json({ message: "File not found" });
+  }
+
+  try {
+    const { path: resolvedPath, cleanup } = await FileService.getFile(attachment.path);
+    res.set({
+      "Content-Type": attachment.type || "application/octet-stream"
+    });
+
+    const stream = createReadStream(resolvedPath);
+    const finalize = async () => {
+      if (cleanup) {
+        await cleanup();
+      }
+    };
+
+    stream.on('error', async (error) => {
+      console.error('File stream error:', error);
+      await finalize();
+      if (!res.headersSent) {
+        res.status(500).json({ message: "Internal server error" });
+      } else {
+        res.end();
+      }
+    });
+
+    res.on('close', finalize);
+    res.on('finish', finalize);
+
+    return stream.pipe(res);
+  } catch (error) {
+    console.error('Failed to resolve file:', error);
+    return res.status(500).json({ message: "Internal server error" });
+  }
+});
+
 //@ts-ignore
 router.get(/.*/, async (req, res) => {
   const fullPath = decodeURIComponent(req.path.substring(1));

@@ -1,0 +1,47 @@
+use std::sync::Arc;
+
+use axum::body::Body;
+use axum::extract::State;
+use axum::http::{Request, StatusCode};
+use axum::middleware::Next;
+use axum::response::Response;
+
+use super::LocalApiContext;
+
+pub async fn auth_middleware(
+    State(state): State<Arc<LocalApiContext>>,
+    req: Request<Body>,
+    next: Next,
+) -> Result<Response, StatusCode> {
+    let path = req.uri().path();
+    if is_public_path(path) {
+        return Ok(next.run(req).await);
+    }
+
+    let token = extract_bearer(req.headers().get(axum::http::header::AUTHORIZATION));
+    match token {
+        Some(value) if value == state.token => Ok(next.run(req).await),
+        _ => Err(StatusCode::UNAUTHORIZED),
+    }
+}
+
+fn is_public_path(path: &str) -> bool {
+    matches!(
+        path,
+        "/health"
+            | "/api/auth/login"
+            | "/api/auth/local"
+            | "/api/auth/logout"
+            | "/api/auth/verify-2fa"
+    )
+}
+
+fn extract_bearer(header: Option<&axum::http::HeaderValue>) -> Option<String> {
+    let raw = header?.to_str().ok()?;
+    let prefix = "Bearer ";
+    if raw.starts_with(prefix) {
+        Some(raw[prefix.len()..].to_string())
+    } else {
+        None
+    }
+}

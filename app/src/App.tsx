@@ -21,7 +21,11 @@ import { useAndroidShortcuts } from '@/lib/hooks';
 import { useQuickaiHotkey } from '@/hooks/useQuickaiHotkey';
 import { useInitialHotkeySetup } from '@/hooks/useInitialHotkeySetup';
 import { isInTauri, isDesktop } from "@/lib/tauriHelper";
+import { resolveBaseUrl, isLocalMode, saveBlinkoEndpoint, setLocalHttpUnavailable, getBlinkoEndpoint } from "@/lib/blinkoEndpoint";
+import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { reinitializeTrpcApi } from "@/lib/trpc";
+import { signIn } from "@/components/Auth/auth-client";
 import QuickNotePage from "./pages/quicknote";
 import QuickAIPage from "./pages/quickai";
 import QuickToolPage from "./pages/quicktool";
@@ -257,6 +261,8 @@ function AppRoutes() {
 
 function App() {
   initStore();
+
+  const [baseReady, setBaseReady] = useState(false);
   
   // Initialize Android shortcuts handler
   useAndroidShortcuts();
@@ -269,6 +275,75 @@ function App() {
   useEffect(() => {
     RootStore.Get(PluginManagerStore).initInstalledPlugins();
   }, []);
+
+  useEffect(() => {
+    resolveBaseUrl()
+      .then(() => {
+        reinitializeTrpcApi();
+      })
+      .then(async () => {
+        if (!isInTauri() || !isLocalMode()) return;
+        try {
+          const health = await fetch(getBlinkoEndpoint('/health'), { signal: AbortSignal.timeout(2000) });
+          if (!health.ok) {
+            setLocalHttpUnavailable(true);
+          }
+        } catch (error) {
+          setLocalHttpUnavailable(true);
+        }
+        const userStore = RootStore.Get(UserStore);
+        if (!userStore.token) {
+          await signIn('credentials', {
+            username: 'local',
+            password: 'local',
+            redirect: false,
+          });
+        }
+      })
+      .catch(console.error)
+      .finally(() => setBaseReady(true));
+  }, []);
+
+  useEffect(() => {
+    if (!baseReady || !isInTauri()) return;
+    let cancelled = false;
+    let tries = 0;
+    const tick = async () => {
+      tries += 1;
+      if (cancelled || tries > 20) return;
+      try {
+        const baseUrl = await invoke<string | null>("get_local_api_base_url");
+        if (baseUrl) {
+          saveBlinkoEndpoint(baseUrl);
+          setLocalHttpUnavailable(false);
+          reinitializeTrpcApi();
+          return;
+        }
+      } catch {
+        // ignore and retry
+      }
+      setTimeout(tick, 500);
+    };
+    void tick();
+    return () => {
+      cancelled = true;
+    };
+  }, [baseReady]);
+
+  useEffect(() => {
+    if (!isInTauri()) return;
+    const handler = () => {
+      if (document.visibilityState === 'visible') {
+        invoke('sync_now').catch(console.error);
+      }
+    };
+    document.addEventListener('visibilitychange', handler);
+    return () => document.removeEventListener('visibilitychange', handler);
+  }, []);
+
+  if (!baseReady) {
+    return <LoadingPage />;
+  }
 
   return (
     <>

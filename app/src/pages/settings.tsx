@@ -24,7 +24,8 @@ import { ImportAIDialog } from '@/components/BlinkoSettings/ImportAIDialog';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { Icon } from '@/components/Common/Iconify/icons';
 import { HotkeySetting } from '@/components/BlinkoSettings/HotkeySetting';
-import { isDesktop } from '@/lib/tauriHelper';
+import { isDesktop, isInTauri } from '@/lib/tauriHelper';
+import { SyncSetting } from '@/components/BlinkoSettings/SyncSetting';
 
 type SettingItem = {
   key: string;
@@ -32,6 +33,7 @@ type SettingItem = {
   icon: string;
   component: JSX.Element;
   requireAdmin: boolean;
+  requireTauri?: boolean;
   keywords?: string[];
 };
 export const allSettings: SettingItem[] = [
@@ -140,6 +142,15 @@ export const allSettings: SettingItem[] = [
     keywords: ['plugin', 'plugins', '插件', '插件设置'],
   },
   {
+    key: 'sync',
+    title: 'Sync',
+    icon: 'tabler:refresh',
+    component: <SyncSetting />,
+    requireAdmin: false,
+    requireTauri: true,
+    keywords: ['sync', 'synchronization', '同步'],
+  },
+  {
     key: 'about',
     title: ('about'),
     icon: 'tabler:info-circle',
@@ -157,6 +168,9 @@ const Page = observer(() => {
 
   const getVisibleSettings = () => {
     let settings = allSettings.filter((setting) => !setting.requireAdmin || user.isSuperAdmin);
+    if (!isInTauri()) {
+      settings = settings.filter((setting) => !setting.requireTauri);
+    }
 
     // Hide hotkey settings on mobile platforms
     settings = settings.filter((setting) =>

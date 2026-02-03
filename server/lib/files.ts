@@ -230,9 +230,9 @@ export class FileService {
 
   static async uploadFileStream(
     {
-      stream, originalName, fileSize, type, accountId, metadata
+      stream, originalName, fileSize, type, accountId, metadata, syncId
     }: {
-      stream: ReadableStream, originalName: string, fileSize: number, type: string, accountId: number, metadata?: any
+      stream: ReadableStream, originalName: string, fileSize: number, type: string, accountId: number, metadata?: any, syncId?: string | null
     }) {
     const config = await getGlobalConfig({ useAdmin: true });
     const extension = path.extname(originalName);
@@ -342,7 +342,8 @@ export class FileService {
           type,
           noteId: null,
           accountId,
-          metadata
+          metadata,
+          syncId
         });
         return {
           filePath: `/api/file/${relativePath}`,
@@ -357,9 +358,9 @@ export class FileService {
 
   // path: /api/file/123/456/789.jpg
   static async createAttachment({
-    path, name, size, type, noteId, accountId, metadata
+    path, name, size, type, noteId, accountId, metadata, syncId
   }: {
-    path: string, name: string, size: number, type: string, noteId?: number | null, accountId: number, metadata?: any
+    path: string, name: string, size: number, type: string, noteId?: number | null, accountId: number, metadata?: any, syncId?: string | null
   }) {
     const pathParts = (path as string)
       .replace('/api/file/', '')
@@ -378,7 +379,8 @@ export class FileService {
         perfixPath: prefixPath.startsWith(',') ? prefixPath.substring(1) : prefixPath,
         ...(noteId ? { noteId } : {}),
         accountId,
-        ...(metadata ? { metadata } : {})
+        ...(metadata ? { metadata } : {}),
+        ...(syncId ? { syncId } : {})
       }
     })
   }
@@ -489,4 +491,3 @@ export class FileService {
     }
   }
 }
-

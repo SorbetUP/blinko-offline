@@ -14,7 +14,7 @@ pub fn init<R: Runtime, C: DeserializeOwned>(
 pub struct Blinko<R: Runtime>(AppHandle<R>);
 
 impl<R: Runtime> Blinko<R> {
-  pub fn setcolor(&self, payload: SetColorRequest) -> crate::Result<()> {
+  pub fn setcolor(&self, _payload: SetColorRequest) -> crate::Result<()> {
     Ok(())
   }
 

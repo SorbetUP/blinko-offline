@@ -127,7 +127,7 @@ pub fn setup_text_selection_monitoring<R: Runtime>(
 
 // Helper function to get and validate mouse position
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
-fn get_mouse_position<R: Runtime>(app: &AppHandle<R>) -> (f64, f64) {
+fn get_mouse_position<R: Runtime>(_app: &AppHandle<R>) -> (f64, f64) {
     match Mouse::get_mouse_position() {
         Mouse::Position { x, y } => {
             println!("📍 Raw mouse position: ({}, {})", x, y);
@@ -139,7 +139,7 @@ fn get_mouse_position<R: Runtime>(app: &AppHandle<R>) -> (f64, f64) {
             {
                 println!("🪟 Windows detected - checking DPI scaling");
                 // Get primary monitor to determine scaling factor
-                if let Ok(monitors) = app.available_monitors() {
+                if let Ok(monitors) = _app.available_monitors() {
                     if let Some(primary_monitor) = monitors.into_iter().next() {
                         let monitor_size = primary_monitor.size();
                         let monitor_scale = primary_monitor.scale_factor();
@@ -485,6 +485,5 @@ fn get_selected_text_directly() -> Result<String, String> {
         }
     }
 }
-
 
 

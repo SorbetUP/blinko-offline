@@ -13,7 +13,7 @@ import { GradientBackground } from "@/components/Common/GradientBackground";
 import { signIn } from "@/components/Auth/auth-client";
 import { useNavigate } from "react-router-dom";
 import { Link } from 'react-router-dom';
-import { saveBlinkoEndpoint, getSavedEndpoint, getBlinkoEndpoint } from "@/lib/blinkoEndpoint";
+import { saveBlinkoEndpoint, getSavedEndpoint, getBlinkoEndpoint, resolveBaseUrl, isLocalMode } from "@/lib/blinkoEndpoint";
 
 type OAuthProvider = {
   id: string;
@@ -48,6 +48,10 @@ export default function Component() {
   }, []);
 
   useEffect(() => {
+    if (isLocalMode()) {
+      setProviders([]);
+      return;
+    }
     api.public.oauthProviders.query().then(providers => {
       setProviders(providers);
     });
@@ -108,6 +112,13 @@ export default function Component() {
       console.error('Storage error:', error);
     }
   }, []);
+
+  useEffect(() => {
+    if (!isTauriEnv || getSavedEndpoint()) return;
+    resolveBaseUrl()
+      .then((url) => setEndpoint(url))
+      .catch((error) => console.error('Resolve base URL error:', error));
+  }, [isTauriEnv]);
 
   const login = async () => {
     try {

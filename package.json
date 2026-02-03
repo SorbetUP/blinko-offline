@@ -12,10 +12,16 @@
     "dev": "cd app && bun run tauri dev",
     "build:web": "turbo run build:web",
     "test": "turbo run test",
+    "test:unit": "turbo run test --filter=@blinko/frontend",
+    "test:api-local": "cd app/src-tauri && cargo test --tests -- --nocapture",
+    "test:integration": "node tools/local_api_smoke.mjs",
     "start:server:production": "ncp dist/public server/public && cd server && bun run start",
     "clean": "turbo run clean && rm -rf node_modules",
+    "dev:headless": "cd app && bun run tauri:dev -- --no-window",
     "dev:backend": "dotenv turbo run dev --filter=@blinko/backend",
     "dev:frontend": "dotenv turbo run dev --filter=@blinko/frontend",
+    "lint:js": "turbo run lint --filter=@blinko/frontend",
+    "lint:rust": "cd app/src-tauri && cargo fmt --all && cargo clippy --all-targets",
     "postinstall": "turbo run prisma:generate --filter=@blinko/backend",
     "setup": "bun install",
     "prisma:generate": "cd prisma && prisma generate",
@@ -24,7 +30,8 @@
     "prisma:studio": "cd prisma && prisma studio",
     "build:seed": "tsup prisma/seed.ts --outDir dist",
     "seed": "bun dist/seed.js",
-    "build:blinko:types": "tsc -p tsconfig.blinko.json"
+    "build:blinko:types": "tsc -p tsconfig.blinko.json",
+    "build:bundle": "cd app && bun run tauri:desktop:build"
   },
   "devDependencies": {
     "@types/lru-cache": "^7.10.10",

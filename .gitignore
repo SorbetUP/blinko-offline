@@ -33,3 +33,9 @@ dev-dist
 .claude/settings.local.json
 target
 server/public
+
+# Local agent workspace / notes (not part of product code)
+agent/
+
+# Android/Gradle caches
+**/.gradle/

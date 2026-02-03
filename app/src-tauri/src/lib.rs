@@ -2,6 +2,12 @@
 mod desktop;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 use desktop::*;
+pub mod local_runtime;
+pub mod local_db;
+pub mod local_api;
+pub mod local_commands;
+pub mod sync;
+use std::time::Duration;
 use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -55,6 +61,15 @@ pub fn run() {
     {
         builder
             .invoke_handler(tauri::generate_handler![
+                local_runtime::get_local_runtime_info,
+                local_api::get_local_api_base_url,
+                local_commands::notes_list,
+                local_commands::note_get,
+                local_commands::note_upsert,
+                local_commands::note_delete,
+                sync::scheduler::sync_now,
+                sync::migration::import_remote_to_local_cmd,
+                sync::migration::export_local_to_remote_cmd,
                 toggle_editor_window,
                 register_hotkey,
                 unregister_hotkey,
@@ -75,6 +90,65 @@ pub fn run() {
                 set_desktop_colors
             ])
             .setup(|app| {
+                let runtime_info = match local_runtime::init_local_runtime(&app.handle()) {
+                    Ok(info) => info,
+                    Err(err) => {
+                        eprintln!("init_local_runtime failed: {err}");
+                        let paths = local_runtime::paths::RuntimePaths::from_root(std::env::temp_dir().join("blinko"));
+                        let config = local_runtime::config::LocalConfig::default();
+                        local_runtime::LocalRuntimeInfo::new(paths, &config)
+                    }
+                };
+
+                app.manage(local_runtime::LocalRuntimeState::new(runtime_info));
+                let runtime_state = app.state::<local_runtime::LocalRuntimeState>();
+                let info = runtime_state.snapshot();
+
+                let config = match local_runtime::config::load_config(&info.paths) {
+                    Ok(c) => c,
+                    Err(err) => {
+                        eprintln!("load_config failed: {err}");
+                        local_runtime::config::LocalConfig::default()
+                    }
+                };
+
+                let db = match local_db::LocalDb::connect_lazy(&info.paths) {
+                    Ok(db) => db,
+                    Err(err) => {
+                        eprintln!("LocalDb::connect_lazy failed: {err}");
+                        setup_app(app)?;
+                        return Ok(());
+                    }
+                };
+
+                let data_state = local_runtime::LocalDataState::new(db.clone(), config.clone(), info.paths.clone());
+                app.manage(data_state.clone());
+
+                let context = local_api::build_context(info.paths.clone(), &config, db.clone(), data_state.clone()).ok();
+                let handle = app.handle().clone();
+
+                tauri::async_runtime::spawn(async move {
+                    if let Err(err) = db.init().await {
+                        eprintln!("LocalDb::init failed: {err}");
+                        return;
+                    }
+
+                    sync::scheduler::start_sync_scheduler(data_state.clone(), Duration::from_secs(300));
+
+                    if let Some(context) = context {
+                        match local_api::start_local_api(context).await {
+                            Ok(port) => {
+                                handle.state::<local_runtime::LocalRuntimeState>().set_api_port(port);
+                            }
+                            Err(err) => {
+                                eprintln!("start_local_api failed: {err}");
+                            }
+                        }
+                    } else {
+                        eprintln!("Local API context missing (token/device_id).");
+                    }
+                });
+
                 #[cfg(not(any(target_os = "android", target_os = "ios")))]
                 {
                     use tauri_plugin_autostart::MacosLauncher;
@@ -95,8 +169,76 @@ pub fn run() {
     #[cfg(any(target_os = "android", target_os = "ios"))]
     {
         builder
-            .invoke_handler(tauri::generate_handler![])
-            .setup(|_app| {
+            .invoke_handler(tauri::generate_handler![
+                local_runtime::get_local_runtime_info,
+                local_api::get_local_api_base_url,
+                local_commands::notes_list,
+                local_commands::note_get,
+                local_commands::note_upsert,
+                local_commands::note_delete,
+                sync::scheduler::sync_now,
+                sync::migration::import_remote_to_local_cmd,
+                sync::migration::export_local_to_remote_cmd
+            ])
+            .setup(|app| {
+                let runtime_info = match local_runtime::init_local_runtime(&app.handle()) {
+                    Ok(info) => info,
+                    Err(err) => {
+                        eprintln!("init_local_runtime failed: {err}");
+                        let paths = local_runtime::paths::RuntimePaths::from_root(std::env::temp_dir().join("blinko"));
+                        let config = local_runtime::config::LocalConfig::default();
+                        local_runtime::LocalRuntimeInfo::new(paths, &config)
+                    }
+                };
+
+                app.manage(local_runtime::LocalRuntimeState::new(runtime_info));
+                let runtime_state = app.state::<local_runtime::LocalRuntimeState>();
+                let info = runtime_state.snapshot();
+
+                let config = match local_runtime::config::load_config(&info.paths) {
+                    Ok(c) => c,
+                    Err(err) => {
+                        eprintln!("load_config failed: {err}");
+                        local_runtime::config::LocalConfig::default()
+                    }
+                };
+
+                let db = match local_db::LocalDb::connect_lazy(&info.paths) {
+                    Ok(db) => db,
+                    Err(err) => {
+                        eprintln!("LocalDb::connect_lazy failed: {err}");
+                        return Ok(());
+                    }
+                };
+
+                let data_state = local_runtime::LocalDataState::new(db.clone(), config.clone(), info.paths.clone());
+                app.manage(data_state.clone());
+
+                let context = local_api::build_context(info.paths.clone(), &config, db.clone(), data_state.clone()).ok();
+                let handle = app.handle().clone();
+
+                tauri::async_runtime::spawn(async move {
+                    if let Err(err) = db.init().await {
+                        eprintln!("LocalDb::init failed: {err}");
+                        return;
+                    }
+
+                    sync::scheduler::start_sync_scheduler(data_state.clone(), Duration::from_secs(300));
+
+                    if let Some(context) = context {
+                        match local_api::start_local_api(context).await {
+                            Ok(port) => {
+                                handle.state::<local_runtime::LocalRuntimeState>().set_api_port(port);
+                            }
+                            Err(err) => {
+                                eprintln!("start_local_api failed: {err}");
+                            }
+                        }
+                    } else {
+                        eprintln!("Local API context missing (token/device_id).");
+                    }
+                });
+
                 Ok(())
             })
             .run(tauri::generate_context!())

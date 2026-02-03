@@ -31,6 +31,7 @@ model accounts {
   tags          tag[]
   comments      comments[]
   attachments   attachments[]
+  syncChanges   syncChanges[]
   follows       follows[]
   notifications notifications[]
   conversations conversation[]
@@ -40,6 +41,7 @@ model accounts {
 
 model attachments {
   id            Int      @id @default(autoincrement())
+  syncId        String?  @db.VarChar
   isShare       Boolean  @default(false)
   sharePassword String   @default("") @db.VarChar
   name          String   @default("") @db.VarChar
@@ -57,6 +59,8 @@ model attachments {
 
   note    notes?    @relation(fields: [noteId], references: [id])
   account accounts? @relation(fields: [accountId], references: [id])
+
+  @@index([accountId, syncId])
 }
 
 model config {
@@ -136,6 +140,24 @@ model tagsToNote {
   tag  tag   @relation(fields: [tagId], references: [id])
 
   @@id([noteId, tagId])
+}
+
+model syncChanges {
+  id          Int      @id @default(autoincrement())
+  accountId   Int
+  entityType  String   @db.VarChar
+  entityId    String   @db.VarChar
+  op          String   @db.VarChar
+  payloadJson String   @db.Text
+  ts          DateTime @db.Timestamptz(6)
+  deviceId    String   @db.VarChar
+  createdAt   DateTime @default(now()) @db.Timestamptz(6)
+
+  account accounts @relation(fields: [accountId], references: [id])
+
+  @@index([accountId, id])
+  @@index([accountId, entityType])
+  @@map("sync_changes")
 }
 
 model noteReference {
