@@ -155,7 +155,8 @@ async function setupApiRoutes(app: express.Application) {
   // Helper function to serve vditor dependencies with gzip compression
   const serveVditorFile = (routePath: string, filePath: string) => {
     app.use(routePath, (req, res) => {
-      const fullPath = path.resolve(__dirname, filePath);
+      // dist/index.js runs from ../dist, so serve vditor assets from the server directory
+      const fullPath = path.resolve(appRootProd, filePath);
       
       // Check if file exists
       if (!fs.existsSync(fullPath)) {
@@ -203,7 +204,7 @@ async function setupApiRoutes(app: express.Application) {
       'Cache-Control': 'public, max-age=604800, immutable',
       'Expires': new Date(Date.now() + 604800000).toUTCString()
     });
-    res.sendFile(path.resolve(__dirname, './lute.min.js'));
+    res.sendFile(path.resolve(appRootProd, './lute.min.js'));
   });
 
   // Serve vditor dependencies from local files
