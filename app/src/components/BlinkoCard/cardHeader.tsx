@@ -1,5 +1,5 @@
 import { Icon } from '@/components/Common/Iconify/icons';
-import { Button, Tooltip } from '@heroui/react';
+import { Tooltip } from '@heroui/react';
 import { Copy } from "../Common/Copy";
 import { LeftCickMenu, ShowEditTimeModel } from "../BlinkoRightClickMenu";
 import { BlinkoStore } from '@/store/blinkoStore';
@@ -55,20 +55,6 @@ export const CardHeader = observer(({ blinkoItem, blinko, isShareMode, isExpande
   return (
     <div className={`flex items-center select-none ${isExpanded ? 'mb-4' : 'mb-1'}`}>
       <div className={`flex items-center w-full gap-1 ${isExpanded ? 'text-base' : 'text-xs'}`}>
-        {isExpanded && (
-          <Button
-            isIconOnly
-            variant='flat'
-            size='sm'
-            className='mr-2'
-            onPress={(e) => {
-              window.history.back();
-            }}
-          >
-            <Icon icon="tabler:arrow-left" width={iconSize} height={iconSize} />
-          </Button>
-        )}
-
         {blinkoItem.isShare && !isShareMode && (
           <Tooltip content={t('shared')} delay={1000}>
             <div className="flex items-center gap-2">
@@ -162,6 +148,24 @@ export const CardHeader = observer(({ blinkoItem, blinko, isShareMode, isExpande
             noteId={blinkoItem.id!}
             className={'opacity-0 group-hover/card:opacity-100 group-hover/card:translate-x-0 ml-2 cursor-pointer hover:text-primary text-desc mt-[1px]'}
           />
+        )}
+
+        {/* Trash/Recycle bin button */}
+        {!isShareMode && (
+          <Tooltip content={t('trash')} delay={1000}>
+            <Icon
+              icon="mingcute:delete-2-line"
+              width={iconSize}
+              height={iconSize}
+              className={`opacity-0 group-hover/card:opacity-100 group-hover/card:translate-x-0 ml-2 cursor-pointer hover:text-red-500 text-desc ${blinkoItem.isRecycle ? 'text-red-500 opacity-100' : ''}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                PromiseCall(api.notes.trashMany.mutate({ ids: [blinkoItem.id!] })).then(() => {
+                  blinko.updateTicker++;
+                });
+              }}
+            />
+          </Tooltip>
         )}
 
         {blinkoItem.isTop && (

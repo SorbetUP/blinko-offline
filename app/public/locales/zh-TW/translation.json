@@ -543,6 +543,8 @@
   "output-result": "輸出參數",
   "over": "越过",
   "page-size": "每页加载数",
+  "font-size": "字体大小",
+  "font-style": "字体样式",
   "paragraph": "段落",
   "password": "密碼",
   "password-error": "密碼錯誤",
@@ -842,5 +844,9 @@
   "years-ago": "",
   "yesterday": "昨天",
   "your-azure-openai-instance-name": "您的 Azure OpenAI 实例名称",
-  "your-changes-have-been-saved": "您的更改已保存！"
+  "your-changes-have-been-saved": "您的更改已保存！",
+  "enable-signin-footer": "啟用登入頁尾",
+  "signin-footer-text": "登入頁尾內容",
+  "signin-footer-desc": "支援HTML: <a href='...'>連結</a>, <strong>粗體</strong>, <em>斜體</em>, <br/>",
+  "signin-footer-placeholder": "例如：<a href='https://blinko.space/'>Blinko</a> © 2026 Blinko. 版權所有."
 }

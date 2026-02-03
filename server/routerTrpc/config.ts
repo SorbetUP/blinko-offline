@@ -21,9 +21,12 @@ export const getGlobalConfig = async ({ ctx, useAdmin = false }: { ctx?: Context
       || item.key == 'theme'
       || item.key == 'themeColor'
       || item.key == 'themeForegroundColor'
+      || item.key == 'fontStyle'
       || item.key == 'maxHomePageWidth'
       || item.key == 'customBackgroundUrl'
       || item.key == 'hidePcEditor'
+      || item.key == 'signinFooterEnabled'
+      || item.key == 'signinFooterText'
     ) {
       //if user not login, then use frist find config
       if (!userId) {
@@ -224,7 +227,7 @@ export const configRouter = router({
     }).nullable())
     .query(async function ({ input, ctx }) {
       const { type } = input;
-      console.log(123)
+
       const model = await getAiModelConfig(type, ctx);
       return model;
     })

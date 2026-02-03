@@ -1,5 +1,5 @@
 import { observer } from "mobx-react-lite";
-import { Switch, Input, Tooltip } from "@heroui/react";
+import { Switch, Input, Tooltip, Textarea } from "@heroui/react";
 import { useTranslation } from "react-i18next";
 import { Item, ItemWithTooltip, SelectDropdown } from "./Item";
 import ThemeSwitcher from "../Common/Theme/ThemeSwitcher";
@@ -15,6 +15,7 @@ import { CollapsibleCard } from "../Common/CollapsibleCard";
 import { GradientBackground } from "../Common/GradientBackground";
 import { UserStore } from "@/store/user";
 import { BaseStore } from "@/store/baseStore";
+import FontSwitcher from "../Common/FontSwitcher";
 
 export const PerferSetting = observer(() => {
   const { t } = useTranslation()
@@ -24,13 +25,16 @@ export const PerferSetting = observer(() => {
   const [textLength, setTextLength] = useState(blinko.config.value?.textFoldLength?.toString() || '500');
   const [maxHomePageWidth, setMaxHomePageWidth] = useState(blinko.config.value?.maxHomePageWidth?.toString() || '0');
   const [customBackgroundUrl, setCustomBackgroundUrl] = useState(blinko.config.value?.customBackgroundUrl || '');
+  const [signinFooterText, setSigninFooterText] = useState(blinko.config.value?.signinFooterText || '');
   const user = RootStore.Get(UserStore)
 
   useEffect(() => {
+    blinko.config.call();
     setTextLength(blinko.config.value?.textFoldLength?.toString() || '500');
     setMaxHomePageWidth(blinko.config.value?.maxHomePageWidth?.toString() || '0');
     setCustomBackgroundUrl(blinko.config.value?.customBackgroundUrl || '');
-  }, [blinko.config.value?.textFoldLength, blinko.config.value?.maxHomePageWidth]);
+    setSigninFooterText(blinko.config.value?.signinFooterText || '');
+  }, [blinko.config.value?.textFoldLength, blinko.config.value?.maxHomePageWidth, blinko.config.value?.signinFooterText]);
 
 
   return <CollapsibleCard
@@ -84,7 +88,7 @@ export const PerferSetting = observer(() => {
           value: value
         }))
       }} />} />
-      
+
     <Item
       leftContent={<>{t('default-home-page')}</>}
       rightContent={
@@ -336,7 +340,19 @@ export const PerferSetting = observer(() => {
           }}
         />
       } />
-
+    <Item
+      leftContent={<>{t('font-style')}</>}
+      rightContent={
+        <FontSwitcher fontname={blinko.config.value?.fontStyle} onChange={async fontname => {
+          await PromiseCall(api.config.update.mutate({
+            key: 'fontStyle',
+            value: fontname
+          }))
+          // Refresh config to update UI
+          await blinko.config.call()
+        }} />
+      }
+    />
     <Item
       leftContent={<>{t('toolbar-visibility')}</>}
       rightContent={
@@ -414,6 +430,59 @@ export const PerferSetting = observer(() => {
                 value: customBackgroundUrl
               }), { autoAlert: false })
             }} />} />
+      )
+    }
+
+    {
+      user.isSuperAdmin && (
+        <Item
+          leftContent={<>{t('enable-signin-footer')}</>}
+          rightContent={
+            <Switch
+              isSelected={blinko.config.value?.signinFooterEnabled ?? false}
+              onChange={async (e) => {
+                await PromiseCall(api.config.update.mutate({
+                  key: 'signinFooterEnabled',
+                  value: e.target.checked
+                }));
+                blinko.config.call();
+              }}
+            />
+          }
+        />
+      )
+    }
+
+    {
+      user.isSuperAdmin && (
+        <Item
+          type="col"
+          leftContent={
+            <div className="flex flex-col gap-1">
+              <div>{t('signin-footer-text')}</div>
+              <div className="text-xs text-default-400">{t('signin-footer-desc')}</div>
+            </div>
+          }
+          rightContent={
+            <Textarea
+              radius="lg"
+              minRows={3}
+              maxRows={8}
+              maxLength={1000}
+              value={signinFooterText}
+              onChange={(e) => setSigninFooterText(e.target.value)}
+              onBlur={async () => {
+                await PromiseCall(api.config.update.mutate({
+                  key: 'signinFooterText',
+                  value: signinFooterText
+                }));
+                blinko.config.call();
+              }}
+              placeholder={t('signin-footer-placeholder')}
+              className="w-full"
+            />
+          }
+        />
       )
     }
   </CollapsibleCard>
