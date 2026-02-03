@@ -27,6 +27,8 @@ async function build() {
         'buffer', 'crypto', 'events', 'fs', 'http', 'https', 'net', 
         'os', 'path', 'querystring', 'stream', 'util', 'zlib',
         '@node-rs/crc32',
+        // macOS-only optional dependency pulled by chokidar; exclude from bundle
+        'fsevents',
         'lightningcss',
         'llamaindex',
         'onnxruntime-node',
