@@ -272,16 +272,14 @@ async fn handle_notes(
         "upsert" => {
             let input_obj = input.and_then(|v| v.as_object().cloned()).unwrap_or_default();
             let id = input_obj.get("id").and_then(as_i64).unwrap_or(0);
-            let content = input_obj
+            let content_opt = input_obj
                 .get("content")
                 .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            let title = input_obj
+                .map(|v| v.to_string());
+            let title_opt = input_obj
                 .get("title")
                 .and_then(|v| v.as_str())
-                .unwrap_or_else(|| content.lines().next().unwrap_or("") )
-                .to_string();
+                .map(|v| v.to_string());
             let is_archived = input_obj.get("isArchived").and_then(as_bool).unwrap_or(false);
             let is_recycle = input_obj.get("isRecycle").and_then(as_bool).unwrap_or(false);
             let is_share = input_obj.get("isShare").and_then(as_bool).unwrap_or(false);
@@ -289,6 +287,10 @@ async fn handle_notes(
             let note_type = input_obj.get("type").and_then(as_i64).unwrap_or(0);
 
             let note = if id == 0 {
+                let content = content_opt.clone().unwrap_or_default();
+                let title = title_opt
+                    .clone()
+                    .unwrap_or_else(|| content.lines().next().unwrap_or("").to_string());
                 note_repo
                     .create_note(
                         NoteInput {
@@ -311,6 +313,16 @@ async fn handle_notes(
                         return Ok(Value::Null);
                     }
                 };
+                let content = content_opt.clone().unwrap_or_else(|| existing.content.clone());
+                let title = title_opt
+                    .clone()
+                    .unwrap_or_else(|| {
+                        if content_opt.is_some() {
+                            content.lines().next().unwrap_or("").to_string()
+                        } else {
+                            existing.title.clone()
+                        }
+                    });
                 let payload = NoteInput {
                     title,
                     content,
