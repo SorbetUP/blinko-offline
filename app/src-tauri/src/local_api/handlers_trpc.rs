@@ -13,6 +13,7 @@ use crate::local_db::settings::SettingsRepository;
 use crate::local_db::tags::{extract_tag_names, Tag, TagRelation, TagRepository};
 
 use super::LocalApiContext;
+use super::local_user;
 
 pub async fn handle_trpc_root(
     State(_state): State<Arc<LocalApiContext>>,
@@ -127,6 +128,15 @@ fn trpc_error(path: &str, message: &str) -> Value {
     })
 }
 
+fn unwrap_input_object(input: Option<Value>) -> serde_json::Map<String, Value> {
+    let obj = input.and_then(|v| v.as_object().cloned()).unwrap_or_default();
+    if let Some(Value::Object(inner)) = obj.get("json") {
+        inner.clone()
+    } else {
+        obj
+    }
+}
+
 async fn dispatch_trpc(
     state: &LocalApiContext,
     proc_path: &str,
@@ -145,7 +155,7 @@ async fn dispatch_trpc(
         return handle_attachments(state, path, input).await;
     }
     if let Some(path) = proc_path.strip_prefix("users.") {
-        return handle_users(path, input);
+        return handle_users(state, path, input).await;
     }
     if let Some(path) = proc_path.strip_prefix("public.") {
         return handle_public(path);
@@ -198,16 +208,20 @@ async fn handle_notes(
 
     match path {
         "list" => {
-            let input_obj = input.and_then(|v| v.as_object().cloned()).unwrap_or_default();
+            let input_obj = unwrap_input_object(input);
             let page = input_obj.get("page").and_then(as_i64).unwrap_or(1).max(1);
             let size = input_obj.get("size").and_then(as_i64).unwrap_or(30).max(1);
             let is_recycle_filter = input_obj.get("isRecycle").and_then(as_bool).unwrap_or(false);
             let is_archived_filter = input_obj.get("isArchived").and_then(as_bool);
+            let note_type_filter = input_obj.get("type").and_then(as_i64);
 
             let mut notes = note_repo.list_all_notes().await?;
             notes.retain(|note| note.is_recycle == is_recycle_filter);
             if let Some(is_archived) = is_archived_filter {
                 notes.retain(|note| note.is_archived == is_archived);
+            }
+            if let Some(note_type) = note_type_filter {
+                notes.retain(|note| note.note_type == note_type);
             }
 
             let start = ((page - 1) * size) as usize;
@@ -643,22 +657,68 @@ async fn handle_attachments(
     }
 }
 
-fn handle_users(path: &str, _input: Option<Value>) -> Result<Value, String> {
-    let user = json!({
-        "id": 1,
-        "name": "Local User",
-        "nickname": "local",
-        "image": "",
-        "role": "local"
-    });
+async fn handle_users(
+    state: &LocalApiContext,
+    path: &str,
+    input: Option<Value>,
+) -> Result<Value, String> {
+    let repo = SettingsRepository::new(state.data_state.db.pool.clone());
+    let existing = local_user::load_local_user(&repo).await?;
     match path {
-        "detail" => Ok(user),
-        "list" => Ok(Value::Array(vec![user])),
-        "canRegister" => Ok(Value::Bool(false)),
-        "register" => Ok(json!({ "ok": true })),
-        "upsertUser" | "upsertUserByAdmin" | "deleteUser" | "regenToken" | "genLowPermToken" | "generate2FASecret" | "verify2FAToken" | "linkAccount" | "unlinkAccount" => {
+        "canRegister" => Ok(Value::Bool(existing.is_none())),
+        "register" => {
+            if existing.is_some() {
+                return Err("Local account already exists".to_string());
+            }
+            let payload = unwrap_input_object(input);
+            let name = payload
+                .get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let password = payload
+                .get("password")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let _ = local_user::create_local_user(&repo, &state.device_id, &name, &password).await?;
             Ok(json!({ "ok": true }))
         }
+        "detail" => {
+            let record = existing.ok_or_else(|| "Local account not found".to_string())?;
+            Ok(serde_json::to_value(record.to_public()).unwrap_or(json!({})))
+        }
+        "list" => {
+            let record = existing.ok_or_else(|| "Local account not found".to_string())?;
+            Ok(Value::Array(vec![
+                serde_json::to_value(record.to_public()).unwrap_or(json!({}))
+            ]))
+        }
+        "upsertUser" | "upsertUserByAdmin" => {
+            let record = existing.ok_or_else(|| "Local account not found".to_string())?;
+            let payload = unwrap_input_object(input);
+            let update = local_user::LocalUserUpdate {
+                name: payload.get("name").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                nickname: payload.get("nickname").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                password: payload.get("password").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                image: payload.get("image").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                role: payload.get("role").and_then(|v| v.as_str()).map(|s| s.to_string()),
+            };
+            let _ = local_user::update_local_user(&repo, &state.device_id, &record, update).await?;
+            Ok(json!({ "ok": true }))
+        }
+        "deleteUser" => {
+            if existing.is_some() {
+                local_user::clear_local_user(&repo).await?;
+            }
+            Ok(json!({ "ok": true }))
+        }
+        "regenToken"
+        | "genLowPermToken"
+        | "generate2FASecret"
+        | "verify2FAToken"
+        | "linkAccount"
+        | "unlinkAccount" => Ok(json!({ "ok": true })),
         "nativeAccountList" | "publicUserList" => Ok(Value::Array(vec![])),
         _ => Ok(default_response(path)),
     }

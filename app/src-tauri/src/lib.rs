@@ -112,10 +112,12 @@ pub fn run() {
                     }
                 };
 
-                let db = match local_db::LocalDb::connect_lazy(&info.paths) {
+                let db = match tauri::async_runtime::block_on(async {
+                    local_db::LocalDb::connect(&info.paths).await
+                }) {
                     Ok(db) => db,
                     Err(err) => {
-                        eprintln!("LocalDb::connect_lazy failed: {err}");
+                        eprintln!("LocalDb::connect failed: {err}");
                         setup_app(app)?;
                         return Ok(());
                     }
@@ -124,15 +126,17 @@ pub fn run() {
                 let data_state = local_runtime::LocalDataState::new(db.clone(), config.clone(), info.paths.clone());
                 app.manage(data_state.clone());
 
-                let context = local_api::build_context(info.paths.clone(), &config, db.clone(), data_state.clone()).ok();
+                let vditor_root = local_api::resolve_vditor_root(&app.handle());
+                let context = local_api::build_context(
+                    info.paths.clone(),
+                    &config,
+                    db.clone(),
+                    data_state.clone(),
+                    vditor_root,
+                ).ok();
                 let handle = app.handle().clone();
 
                 tauri::async_runtime::spawn(async move {
-                    if let Err(err) = db.init().await {
-                        eprintln!("LocalDb::init failed: {err}");
-                        return;
-                    }
-
                     sync::scheduler::start_sync_scheduler(data_state.clone(), Duration::from_secs(300));
 
                     if let Some(context) = context {
@@ -203,10 +207,12 @@ pub fn run() {
                     }
                 };
 
-                let db = match local_db::LocalDb::connect_lazy(&info.paths) {
+                let db = match tauri::async_runtime::block_on(async {
+                    local_db::LocalDb::connect(&info.paths).await
+                }) {
                     Ok(db) => db,
                     Err(err) => {
-                        eprintln!("LocalDb::connect_lazy failed: {err}");
+                        eprintln!("LocalDb::connect failed: {err}");
                         return Ok(());
                     }
                 };
@@ -214,15 +220,17 @@ pub fn run() {
                 let data_state = local_runtime::LocalDataState::new(db.clone(), config.clone(), info.paths.clone());
                 app.manage(data_state.clone());
 
-                let context = local_api::build_context(info.paths.clone(), &config, db.clone(), data_state.clone()).ok();
+                let vditor_root = local_api::resolve_vditor_root(&app.handle());
+                let context = local_api::build_context(
+                    info.paths.clone(),
+                    &config,
+                    db.clone(),
+                    data_state.clone(),
+                    vditor_root,
+                ).ok();
                 let handle = app.handle().clone();
 
                 tauri::async_runtime::spawn(async move {
-                    if let Err(err) = db.init().await {
-                        eprintln!("LocalDb::init failed: {err}");
-                        return;
-                    }
-
                     sync::scheduler::start_sync_scheduler(data_state.clone(), Duration::from_secs(300));
 
                     if let Some(context) = context {

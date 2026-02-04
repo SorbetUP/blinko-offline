@@ -2,7 +2,7 @@ import { createTRPCClient, httpBatchLink, httpLink, splitLink, httpBatchStreamLi
 import { observable } from '@trpc/server/observable';
 import type { AppRouter } from '../../../server/routerTrpc/_app';
 import superjson from 'superjson';
-import { getBlinkoEndpoint, isLocalMode, isLocalHttpUnavailable } from './blinkoEndpoint';
+import { getBlinkoEndpoint, isLocalMode, isLocalHttpUnavailable, setLocalHttpUnavailable } from './blinkoEndpoint';
 import { RootStore } from '@/store';
 import { UserStore } from '@/store/user';
 const headers = () => {
@@ -75,8 +75,13 @@ const getLinks = (useStream = false) => {
     }
 
     if (isLocalMode()) {
+      const localUrl = getBlinkoEndpoint('/api/trpc');
+      if (!localUrl.startsWith('http://') && !localUrl.startsWith('https://')) {
+        setLocalHttpUnavailable(true);
+        return localInvokeLink();
+      }
       return httpLink({
-        url: getBlinkoEndpoint('/api/trpc'),
+        url: localUrl,
         transformer: getTransformer(),
         headers,
         fetch(url, options) {

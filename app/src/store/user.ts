@@ -392,7 +392,18 @@ export class UserStore implements Store {
     const location = useLocation();
 
     useEffect(() => {
-      this.initializeSettings(setTheme, i18n);
+      const init = () => this.initializeSettings(setTheme, i18n);
+      const base = getBlinkoEndpoint();
+      const isReady = !isInTauri() || (base && (base.startsWith('http://') || base.startsWith('https://')));
+      if (isReady) {
+        init();
+        return;
+      }
+      const handler = () => init();
+      eventBus.on('local-api:ready', handler);
+      return () => {
+        eventBus.off('local-api:ready', handler);
+      };
     }, []);
 
     useEffect(() => {

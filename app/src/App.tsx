@@ -22,6 +22,7 @@ import { useQuickaiHotkey } from '@/hooks/useQuickaiHotkey';
 import { useInitialHotkeySetup } from '@/hooks/useInitialHotkeySetup';
 import { isInTauri, isDesktop } from "@/lib/tauriHelper";
 import { resolveBaseUrl, isLocalMode, saveBlinkoEndpoint, setLocalHttpUnavailable, getBlinkoEndpoint } from "@/lib/blinkoEndpoint";
+import { eventBus } from "@/lib/event";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { reinitializeTrpcApi } from "@/lib/trpc";
@@ -263,6 +264,21 @@ function App() {
   initStore();
 
   const [baseReady, setBaseReady] = useState(false);
+
+  const readStoredCredentials = () => {
+    try {
+      const rawUser = localStorage.getItem('username');
+      const rawPassword = localStorage.getItem('password');
+      const username = rawUser ? JSON.parse(rawUser) : null;
+      const password = rawPassword ? JSON.parse(rawPassword) : null;
+      if (typeof username === 'string' && typeof password === 'string') {
+        return { username, password };
+      }
+    } catch (error) {
+      // ignore malformed storage
+    }
+    return null;
+  };
   
   // Initialize Android shortcuts handler
   useAndroidShortcuts();
@@ -277,12 +293,22 @@ function App() {
   }, []);
 
   useEffect(() => {
+    let resolvedBase = '';
     resolveBaseUrl()
-      .then(() => {
-        reinitializeTrpcApi();
+      .then((base) => {
+        resolvedBase = base;
+        if (base && (base.startsWith('http://') || base.startsWith('https://'))) {
+          reinitializeTrpcApi();
+          if (isInTauri()) {
+            eventBus.emit('local-api:ready', base);
+          }
+        }
       })
       .then(async () => {
         if (!isInTauri() || !isLocalMode()) return;
+        if (!resolvedBase || !(resolvedBase.startsWith('http://') || resolvedBase.startsWith('https://'))) {
+          return;
+        }
         try {
           const health = await fetch(getBlinkoEndpoint('/health'), { signal: AbortSignal.timeout(2000) });
           if (!health.ok) {
@@ -291,11 +317,11 @@ function App() {
         } catch (error) {
           setLocalHttpUnavailable(true);
         }
-        const userStore = RootStore.Get(UserStore);
-        if (!userStore.token) {
+        const creds = readStoredCredentials();
+        if (creds) {
           await signIn('credentials', {
-            username: 'local',
-            password: 'local',
+            username: creds.username,
+            password: creds.password,
             redirect: false,
           });
         }
@@ -317,6 +343,15 @@ function App() {
           saveBlinkoEndpoint(baseUrl);
           setLocalHttpUnavailable(false);
           reinitializeTrpcApi();
+          eventBus.emit('local-api:ready', baseUrl);
+          const creds = readStoredCredentials();
+          if (creds) {
+            await signIn('credentials', {
+              username: creds.username,
+              password: creds.password,
+              redirect: false,
+            });
+          }
           return;
         }
       } catch {

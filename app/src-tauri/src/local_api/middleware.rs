@@ -4,7 +4,7 @@ use axum::body::Body;
 use axum::extract::State;
 use axum::http::{Request, StatusCode};
 use axum::middleware::Next;
-use axum::response::Response;
+use axum::response::{IntoResponse, Response};
 
 use super::LocalApiContext;
 
@@ -21,11 +21,19 @@ pub async fn auth_middleware(
     let token = extract_bearer(req.headers().get(axum::http::header::AUTHORIZATION));
     match token {
         Some(value) if value == state.token => Ok(next.run(req).await),
-        _ => Err(StatusCode::UNAUTHORIZED),
+        _ => Ok(StatusCode::UNAUTHORIZED.into_response()),
     }
 }
 
 fn is_public_path(path: &str) -> bool {
+    if path.starts_with("/dist/js/") {
+        return true;
+    }
+    if path.starts_with("/api/trpc/users.canRegister")
+        || path.starts_with("/api/trpc/users.register")
+    {
+        return true;
+    }
     matches!(
         path,
         "/health"

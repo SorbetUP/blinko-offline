@@ -23,7 +23,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let db = LocalDb::connect(&paths).await.map_err(|e| format!("{e}"))?;
     let data_state = LocalDataState::new(db.clone(), config.clone(), paths.clone());
-    let context = build_context(paths.clone(), &config, db, data_state)?;
+    let context = build_context(paths.clone(), &config, db, data_state, None)?;
     let port = start_local_api(Arc::clone(&context)).await?;
 
     println!("LOCAL_API_URL=http://127.0.0.1:{port}");

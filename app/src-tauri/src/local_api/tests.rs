@@ -5,8 +5,9 @@ mod tests {
     use reqwest::{Client, multipart};
     use serde_json::Value;
 
-    use crate::local_api::{build_context, start_local_api};
+    use crate::local_api::{build_context, start_local_api, local_user};
     use crate::local_db::LocalDb;
+    use crate::local_db::settings::SettingsRepository;
     use crate::local_runtime::config::{LocalApiConfig, LocalConfig, LocalMode};
     use crate::local_runtime::paths::RuntimePaths;
 
@@ -34,7 +35,11 @@ mod tests {
         };
 
         let data_state = crate::local_runtime::LocalDataState::new(db.clone(), config.clone(), paths.clone());
-        let context = build_context(paths.clone(), &config, db, data_state).unwrap();
+        let settings_repo = SettingsRepository::new(db.pool.clone());
+        local_user::create_local_user(&settings_repo, "device-test", "a", "b")
+            .await
+            .unwrap();
+        let context = build_context(paths.clone(), &config, db, data_state, None).unwrap();
         let port = start_local_api(Arc::clone(&context)).await.unwrap();
         let base = format!("http://127.0.0.1:{port}");
 

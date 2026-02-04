@@ -7,9 +7,9 @@ import { isInTauri } from '@/lib/tauriHelper';
 import { invoke } from '@tauri-apps/api/core';
 
 const MODES = [
-  { key: 'local', label: 'Local' },
-  { key: 'remote', label: 'Remote' },
-  { key: 'sync', label: 'Sync' },
+  { key: 'local', label: 'Local', description: 'Keep data on this device only.' },
+  { key: 'remote', label: 'Remote', description: 'Use a remote Blinko server for data.' },
+  { key: 'sync', label: 'Sync', description: 'Keep local data and sync with remote.' },
 ];
 
 export const SyncSetting = observer(() => {
@@ -18,6 +18,14 @@ export const SyncSetting = observer(() => {
   const [remoteToken, setRemoteToken] = useState('');
   const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testStatus, setTestStatus] = useState<'idle' | 'ok' | 'error'>('idle');
+  const [testMessage, setTestMessage] = useState('');
+
+  const normalizeRemoteUrl = (value: string) => value.trim().replace(/\/+$/, '');
+
+  const validateRemoteUrl = (value: string) =>
+    value.startsWith('http://') || value.startsWith('https://');
 
   useEffect(() => {
     const loadSettings = async () => {
@@ -27,7 +35,7 @@ export const SyncSetting = observer(() => {
         setMode(data.mode || 'local');
         const endpoint = (data.remote_endpoints || [])[0];
         if (endpoint) {
-          setRemoteUrl(endpoint.url || '');
+          setRemoteUrl(normalizeRemoteUrl(endpoint.url || ''));
           setRemoteToken(endpoint.token || '');
         }
       } catch (error) {
@@ -40,16 +48,18 @@ export const SyncSetting = observer(() => {
   const saveSettings = async () => {
     setLoading(true);
     try {
-      const remote_endpoints = remoteUrl
-        ? [{ id: 'default', url: remoteUrl, token: remoteToken || undefined }]
+      const normalizedUrl = normalizeRemoteUrl(remoteUrl);
+      setRemoteUrl(normalizedUrl);
+      const remote_endpoints = normalizedUrl
+        ? [{ id: 'default', url: normalizedUrl, token: remoteToken || undefined }]
         : [];
       await axiosInstance.put(getBlinkoEndpoint('/sync/settings'), {
         mode,
         remote_endpoints,
       });
       if (isInTauri()) {
-        if (mode === 'remote' && remoteUrl) {
-          saveBlinkoEndpoint(remoteUrl);
+        if (mode === 'remote' && normalizedUrl) {
+          saveBlinkoEndpoint(normalizedUrl);
         } else {
           const localBase = await invoke<string | null>('get_local_api_base_url');
           if (localBase) {
@@ -105,6 +115,47 @@ export const SyncSetting = observer(() => {
     }
   };
 
+  const testRemoteConnection = async () => {
+    setTesting(true);
+    setTestStatus('idle');
+    setTestMessage('');
+    const normalizedUrl = normalizeRemoteUrl(remoteUrl);
+    if (!normalizedUrl || !validateRemoteUrl(normalizedUrl)) {
+      setTestStatus('error');
+      setTestMessage('Please enter a full URL starting with http:// or https://');
+      setTesting(false);
+      return;
+    }
+    try {
+      const health = await fetch(`${normalizedUrl}/health`, {
+        signal: AbortSignal.timeout(5000),
+      });
+      if (!health.ok) {
+        throw new Error(`Health check failed (${health.status})`);
+      }
+      if (remoteToken) {
+        const profile = await fetch(`${normalizedUrl}/api/auth/profile`, {
+          headers: { Authorization: `Bearer ${remoteToken}` },
+          signal: AbortSignal.timeout(5000),
+        });
+        if (!profile.ok) {
+          throw new Error(`Token invalid (${profile.status})`);
+        }
+      }
+      setTestStatus('ok');
+      setTestMessage(
+        remoteToken
+          ? 'Remote reachable and token valid.'
+          : 'Remote reachable. Add a token to test auth.'
+      );
+    } catch (error) {
+      setTestStatus('error');
+      setTestMessage(error instanceof Error ? error.message : 'Connection failed');
+    } finally {
+      setTesting(false);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-4">
       <Select
@@ -120,33 +171,61 @@ export const SyncSetting = observer(() => {
         ))}
       </Select>
 
-      <Input
-        label="Remote base URL"
-        placeholder="https://example.com"
-        value={remoteUrl}
-        onChange={(e) => setRemoteUrl(e.target.value)}
-      />
+      <div className="text-sm text-default-500">
+        {MODES.find((item) => item.key === mode)?.description}
+      </div>
 
-      <Input
-        label="Remote token"
-        placeholder="token"
-        value={remoteToken}
-        onChange={(e) => setRemoteToken(e.target.value)}
-      />
+      {(mode === 'remote' || mode === 'sync') && (
+        <>
+          <Input
+            label="Remote base URL"
+            placeholder="https://your-blinko.example.com"
+            value={remoteUrl}
+            onChange={(e) => setRemoteUrl(e.target.value)}
+          />
+
+          <Input
+            label="Remote token"
+            placeholder="Paste your API token"
+            type="password"
+            value={remoteToken}
+            onChange={(e) => setRemoteToken(e.target.value)}
+          />
+
+          <div className="flex items-center gap-2">
+            <Button variant="flat" isLoading={testing} onPress={testRemoteConnection}>
+              Test connection
+            </Button>
+            {testStatus !== 'idle' && (
+              <span
+                className={
+                  testStatus === 'ok' ? 'text-success text-sm' : 'text-danger text-sm'
+                }
+              >
+                {testMessage}
+              </span>
+            )}
+          </div>
+        </>
+      )}
 
       <div className="flex gap-2">
         <Button color="primary" isLoading={loading} onPress={saveSettings}>
           Save
         </Button>
-        <Button variant="flat" isLoading={syncing} onPress={syncNow}>
-          Sync now
-        </Button>
-        <Button variant="flat" isLoading={syncing} onPress={importFromRemote}>
-          Import
-        </Button>
-        <Button variant="flat" isLoading={syncing} onPress={exportToRemote}>
-          Export
-        </Button>
+        {mode === 'sync' && (
+          <>
+            <Button variant="flat" isLoading={syncing} onPress={syncNow}>
+              Sync now
+            </Button>
+            <Button variant="flat" isLoading={syncing} onPress={importFromRemote}>
+              Import
+            </Button>
+            <Button variant="flat" isLoading={syncing} onPress={exportToRemote}>
+              Export
+            </Button>
+          </>
+        )}
       </div>
     </div>
   );

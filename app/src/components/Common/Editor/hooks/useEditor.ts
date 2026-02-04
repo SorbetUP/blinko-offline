@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { eventBus } from '@/lib/event';
 import { EditorStore } from '../editorStore';
 import { FocusEditorFixMobile, HandleFileType } from '../editorUtils';
@@ -16,7 +16,7 @@ import { AIExtend, Extend } from '../EditorToolbar/extends';
 import { NoteType, toNoteTypeEnum } from '@shared/lib/types';
 import { api } from '@/lib/trpc';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { getBlinkoEndpoint } from '@/lib/blinkoEndpoint';
+import { getBlinkoEndpoint, getAssetBaseUrl } from '@/lib/blinkoEndpoint';
 import * as echarts from 'echarts';
 import { FontManager } from '@/lib/fontManager';
 // Expose echarts globally for vditor chartRender
@@ -110,7 +110,7 @@ const renderAllVditorContent = (
     editorElement = element as HTMLElement;
   }
 
-  const cdn = getBlinkoEndpoint('').replace(/\/$/, "");
+  const cdn = getAssetBaseUrl();
   const styleName = getHighlightStyle(theme);
 
   // Update CSS link (ensure it's loaded before rendering)
@@ -188,9 +188,18 @@ export const useEditorInit = (
   const { t } = useTranslation()
   const isPc = useMediaQuery('(min-width: 768px)')
   const { theme: currentTheme } = useTheme()
+  const [assetBase, setAssetBase] = useState(() => getAssetBaseUrl())
   const blinko = RootStore.Get(BlinkoStore)
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
+
+  useEffect(() => {
+    const handler = () => setAssetBase(getAssetBaseUrl());
+    eventBus.on('local-api:ready', handler);
+    return () => {
+      eventBus.off('local-api:ready', handler);
+    };
+  }, []);
 
   useEffect(() => {
     const showToolbar = store.isShowEditorToolbar(isPc)
@@ -374,7 +383,10 @@ export const useEditorInit = (
 
     // Use currentTheme from useTheme hook, fallback to UserStore if not ready
     const theme = currentTheme || RootStore.Get(UserStore).theme || 'light';
-    const cdn = getBlinkoEndpoint('').replace(/\/$/, "");
+    const cdn = assetBase || getAssetBaseUrl();
+    if (!cdn) {
+      return;
+    }
     
     // Pre-load CSS before vditor initialization to ensure it's ready when code blocks render
     // This is key: load CSS before vditor initialization to ensure styles are available when code highlighting renders
@@ -495,12 +507,13 @@ export const useEditorInit = (
       store.vditor = null;
     };
 
-  }, [mode, blinko.config.value?.toolbarVisibility, store.viewMode, isPc]);
+  }, [mode, blinko.config.value?.toolbarVisibility, store.viewMode, isPc, assetBase]);
 
   // Update vditor theme configuration when theme changes
   useEffect(() => {
     if (store.vditor && currentTheme) {
-      const cdn = getBlinkoEndpoint('').replace(/\/$/, "");
+      const cdn = assetBase || getAssetBaseUrl();
+      if (!cdn) return;
       
       // Update CSS link
       updateHighlightCSS(currentTheme, cdn);

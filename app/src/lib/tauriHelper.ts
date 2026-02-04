@@ -11,6 +11,7 @@ import { downloadDir, publicDir } from '@tauri-apps/api/path'
 import { setStatusBarColor } from 'tauri-plugin-blinko-api'
 import { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { getBlinkoEndpoint } from './blinkoEndpoint';
 
 export interface PermissionStatus {
     audio: boolean;
@@ -67,20 +68,48 @@ export async function downloadFromLink(uri: string, filename?: string) {
     }
 
     try {
+        const resolvedUri = (() => {
+            if (!uri) return '';
+            if (uri.startsWith('http://') || uri.startsWith('https://') || uri.startsWith('tauri://')) {
+                return uri;
+            }
+            return getBlinkoEndpoint(uri);
+        })();
+
+        let parsedUrl: URL | null = null;
+        if (resolvedUri) {
+            try {
+                parsedUrl = new URL(resolvedUri);
+            } catch {
+                try {
+                    parsedUrl = new URL(resolvedUri, window.location.origin);
+                } catch {
+                    parsedUrl = null;
+                }
+            }
+        }
+
+        if (!parsedUrl) {
+            RootStore.Get(ToastPlugin).error(`${i18n.t('download-failed')}: Invalid URL`);
+            return;
+        }
+
         RootStore.Get(ToastPlugin).loading(i18n.t('downloading'), { id: 'downloading' })
 
         if (!filename) {
-            const url = new URL(uri);
-            filename = url.pathname.split('/').pop() || 'downloaded_file';
+            filename = parsedUrl.pathname.split('/').pop() || 'downloaded_file';
         }
 
         const token = RootStore.Get(UserStore).tokenData.value?.token;
-        const downloadUrl = token ? `${uri}?token=${token}` : uri;
+        const downloadUrl = new URL(parsedUrl.toString());
+        if (token) {
+            downloadUrl.searchParams.set('token', token);
+        }
 
         if (isAndroid()) {
             const downloadDirPath = await downloadDir();
             await download(
-                downloadUrl,
+                downloadUrl.toString(),
                 `${downloadDirPath}/${filename}`,
                 ({ progress, total }) => {
                     console.log(`download progress: ${progress} / ${total} bytes`);
@@ -103,7 +132,7 @@ export async function downloadFromLink(uri: string, filename?: string) {
 
             if (savePath) {
                 await download(
-                    downloadUrl,
+                    downloadUrl.toString(),
                     savePath,
                     ({ progress, total }) => {
                         // console.log(`download progress: ${progress} / ${total} bytes`);

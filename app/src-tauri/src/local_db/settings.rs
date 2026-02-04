@@ -70,4 +70,13 @@ impl SettingsRepository {
         .map_err(|e| format!("Failed to upsert setting: {e}"))?;
         Ok(())
     }
+
+    pub async fn delete(&self, key: &str) -> Result<(), String> {
+        sqlx::query("DELETE FROM settings WHERE key = ?")
+            .bind(key)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| format!("Failed to delete setting: {e}"))?;
+        Ok(())
+    }
 }

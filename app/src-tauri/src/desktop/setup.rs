@@ -9,7 +9,10 @@ use crate::desktop::{HotkeyConfig, setup_system_tray, toggle_quicknote_window, t
 
 pub fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let app_handle = app.handle();
-    let main_window = app.get_webview_window("main").unwrap();
+    let Some(main_window) = app.get_webview_window("main") else {
+        eprintln!("Main window not found during setup; skipping desktop setup.");
+        return Ok(());
+    };
 
     // Check if launched via autostart
     let args: Vec<String> = std::env::args().collect();

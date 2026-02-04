@@ -67,22 +67,22 @@ export const BlinkoCard = observer(({ blinkoItem, account, isShareMode = false, 
   const handleClick = () => {
     if (blinko.isMultiSelectMode) {
       blinko.onMultiSelectNote(blinkoItem.id!);
-    } else if (blinkoItem.isBlog && !isShareMode) {
+      return;
+    }
+    if (isShareMode) return;
+    if (blinkoItem.isBlog) {
       setIsFullscreenEditorOpen(true);
       blinko.fullscreenEditorNoteId = blinkoItem.id!;
+      return;
     }
+    blinko.curSelectedNote = _.cloneDeep(blinkoItem);
+    ShowEditBlinkoModel();
+    FocusEditorFixMobile();
   };
 
   const handleContextMenu = () => {
     if (isShareMode) return;
     blinko.curSelectedNote = _.cloneDeep(blinkoItem);
-  };
-
-  const handleDoubleClick = (e: React.MouseEvent) => {
-    if (isShareMode) return;
-    blinko.curSelectedNote = _.cloneDeep(blinkoItem);
-    ShowEditBlinkoModel();
-    FocusEditorFixMobile()
   };
 
   const handleSwipePin = () => {
@@ -112,7 +112,6 @@ export const BlinkoCard = observer(({ blinkoItem, account, isShareMode = false, 
           <div
             {...(!isShareMode && {
               onContextMenu: handleContextMenu,
-              onDoubleClick: handleDoubleClick
             })}
             onClick={handleClick}
           >

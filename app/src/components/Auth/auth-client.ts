@@ -56,8 +56,12 @@ export async function getTokenData(): Promise<TokenData | null> {
   try {
     const userStore = RootStore.Get(UserStore);
     const token = userStore.token;
+    const base = getBlinkoEndpoint();
     
     if (!token) {
+      return null;
+    }
+    if (!base || (!base.startsWith('http://') && !base.startsWith('https://'))) {
       return null;
     }
     
@@ -89,6 +93,14 @@ export async function signIn(
   options: SignInOptions = {}
 ): Promise<SignInResponse | undefined> {
   try {
+    const base = getBlinkoEndpoint();
+    if (!base || (!base.startsWith('http://') && !base.startsWith('https://'))) {
+      return {
+        ok: false,
+        error: 'Endpoint unavailable',
+        status: 503,
+      };
+    }
     if (provider === 'credentials') {
       console.log('signIn Endpoint', getBlinkoEndpoint('/api/auth/login'));
       const response = await fetch(getBlinkoEndpoint('/api/auth/login'), {
@@ -202,7 +214,16 @@ export async function signIn(
 export async function signOut(options: { redirect?: boolean; callbackUrl?: string } = {}): Promise<{ url: string }> {
   try {
     const userStore = RootStore.Get(UserStore);
+    const base = getBlinkoEndpoint();
     
+    if (!base || (!base.startsWith('http://') && !base.startsWith('https://'))) {
+      eventBus.emit('user:token', null);
+      if (options.redirect) {
+        navigate(options.callbackUrl || '/');
+      }
+      return { url: options.callbackUrl || '/' };
+    }
+
     await fetch(getBlinkoEndpoint('/api/auth/logout'), {
       method: 'POST',
       headers: {
