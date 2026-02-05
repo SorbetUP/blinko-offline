@@ -134,7 +134,18 @@ export const noteRouter = router({
             },
             {
               accountId: Number(ctx.id),
-              attachments: { some: { path: { contains: searchText, mode: 'insensitive' } } }
+              title: { contains: searchText, mode: 'insensitive' }
+            },
+            {
+              accountId: Number(ctx.id),
+              attachments: {
+                some: {
+                  OR: [
+                    { path: { contains: searchText, mode: 'insensitive' } },
+                    { name: { contains: searchText, mode: 'insensitive' } }
+                  ]
+                }
+              }
             },
             {
               internalShares: { some: { accountId: Number(ctx.id) } },
@@ -142,7 +153,18 @@ export const noteRouter = router({
             },
             {
               internalShares: { some: { accountId: Number(ctx.id) } },
-              attachments: { some: { path: { contains: searchText, mode: 'insensitive' } } }
+              title: { contains: searchText, mode: 'insensitive' }
+            },
+            {
+              internalShares: { some: { accountId: Number(ctx.id) } },
+              attachments: {
+                some: {
+                  OR: [
+                    { path: { contains: searchText, mode: 'insensitive' } },
+                    { name: { contains: searchText, mode: 'insensitive' } }
+                  ]
+                }
+              }
             }
           ],
         };

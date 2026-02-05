@@ -19,6 +19,7 @@ import { helper } from '@/lib/helper';
 import { useLocation, useSearchParams, useNavigate } from 'react-router-dom';
 import { getBlinkoEndpoint } from '@/lib/blinkoEndpoint';
 import { downloadFromLink } from '@/lib/tauriHelper';
+import { api } from '@/lib/trpc';
 
 interface GlobalSearchProps {
   isOpen: boolean;
@@ -171,7 +172,15 @@ export const GlobalSearch = observer(({ isOpen, onOpenChange }: GlobalSearchProp
         blinkoStore.searchText = query;
         // type: -1 means search all types (Memo, Note, Todo)
         // isArchived: null means search both archived and non-archived
-        const notes = await blinkoStore.noteList.resetAndCall({ page: 1, size: 20, type: -1, isArchived: null });
+        const notes = await api.notes.list.mutate({
+          page: 1,
+          size: 20,
+          type: -1,
+          isArchived: null,
+          isRecycle: false,
+          isUseAiQuery: isAiQuery,
+          searchText: query,
+        });
         // await blinkoStore.blinkoList.resetAndCall({ page: 1, size: 20 });
         // 3. Search for resources using the API
         const resources = await blinkoStore.resourceList.resetAndCall({
@@ -182,6 +191,23 @@ export const GlobalSearch = observer(({ isOpen, onOpenChange }: GlobalSearchProp
           folder: undefined,
         });
 
+        let mergedNotes = notes || [];
+        const resourceNoteIds = new Set<number>();
+        (resources || []).forEach((resource) => {
+          const noteId = resource?.noteId;
+          if (typeof noteId === 'number') {
+            resourceNoteIds.add(noteId);
+          }
+        });
+        if (resourceNoteIds.size > 0) {
+          const relatedNotes = await api.notes.listByIds.mutate({
+            ids: Array.from(resourceNoteIds),
+          });
+          const existingIds = new Set(mergedNotes.map((note) => note.id));
+          const extraNotes = (relatedNotes || []).filter((note) => !existingIds.has(note.id));
+          mergedNotes = mergedNotes.concat(extraNotes);
+        }
+
         // 4. Search settings using the imported allSettings array
         // Filter settings that match the search query
         const matchingSettings = allSettings
@@ -191,7 +217,7 @@ export const GlobalSearch = observer(({ isOpen, onOpenChange }: GlobalSearchProp
 
         // 5. Update search results (filter out .folder placeholder files)
         store.searchResults = {
-          notes: notes || [],
+          notes: mergedNotes,
           resources: (resources || []).filter(r => r.name !== '.folder'),
           settings: matchingSettings,
           tags: [],

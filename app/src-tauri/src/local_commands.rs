@@ -1,5 +1,6 @@
 use serde::Deserialize;
 use serde_json::{json, Value};
+use std::collections::HashSet;
 
 use crate::local_db::attachments::AttachmentRepository;
 use crate::local_db::notes::{Note, NoteInput, NoteRepository};
@@ -14,6 +15,10 @@ pub struct NoteListInput {
     pub is_recycle: Option<bool>,
     #[serde(rename = "isArchived")]
     pub is_archived: Option<bool>,
+    #[serde(rename = "searchText")]
+    pub search_text: Option<String>,
+    #[serde(rename = "type")]
+    pub note_type: Option<i64>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -59,6 +64,36 @@ pub async fn notes_list(
     notes.retain(|note| note.is_recycle == is_recycle_filter);
     if let Some(is_archived) = input.is_archived {
         notes.retain(|note| note.is_archived == is_archived);
+    }
+    if let Some(note_type) = input.note_type {
+        if note_type != -1 {
+            notes.retain(|note| note.note_type == note_type);
+        }
+    }
+    let cleaned_search_text = input
+        .search_text
+        .as_deref()
+        .map(|v| v.trim().trim_start_matches(&['@', '#'][..]).to_lowercase())
+        .filter(|v| !v.is_empty());
+    let mut attachment_note_ids: HashSet<i64> = HashSet::new();
+    if let Some(search_text) = cleaned_search_text.as_deref() {
+        let attachments = attachment_repo.list_all().await?;
+        for attachment in attachments.iter() {
+            if attachment.filename.to_lowercase().contains(search_text)
+                || attachment.path.to_lowercase().contains(search_text)
+            {
+                if let Some(note_id) = attachment.note_id {
+                    attachment_note_ids.insert(note_id);
+                }
+            }
+        }
+    }
+    if let Some(search_text) = cleaned_search_text.as_deref() {
+        notes.retain(|note| {
+            note.title.to_lowercase().contains(search_text)
+                || note.content.to_lowercase().contains(search_text)
+                || attachment_note_ids.contains(&note.id)
+        });
     }
 
     let start = ((page - 1) * size) as usize;

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use axum::extract::{Path, Query, State};
@@ -214,6 +214,27 @@ async fn handle_notes(
             let is_recycle_filter = input_obj.get("isRecycle").and_then(as_bool).unwrap_or(false);
             let is_archived_filter = input_obj.get("isArchived").and_then(as_bool);
             let note_type_filter = input_obj.get("type").and_then(as_i64);
+            let search_text = input_obj
+                .get("searchText")
+                .and_then(|v| v.as_str())
+                .map(|v| v.to_string());
+            let cleaned_search_text = search_text
+                .as_deref()
+                .map(|v| v.trim().trim_start_matches(&['@', '#'][..]).to_lowercase())
+                .filter(|v| !v.is_empty());
+            let mut attachment_note_ids: HashSet<i64> = HashSet::new();
+            if let Some(search_text) = cleaned_search_text.as_deref() {
+                let attachments = attachment_repo.list_all().await?;
+                for attachment in attachments.iter() {
+                    if attachment.filename.to_lowercase().contains(search_text)
+                        || attachment.path.to_lowercase().contains(search_text)
+                    {
+                        if let Some(note_id) = attachment.note_id {
+                            attachment_note_ids.insert(note_id);
+                        }
+                    }
+                }
+            }
 
             let mut notes = note_repo.list_all_notes().await?;
             notes.retain(|note| note.is_recycle == is_recycle_filter);
@@ -221,7 +242,16 @@ async fn handle_notes(
                 notes.retain(|note| note.is_archived == is_archived);
             }
             if let Some(note_type) = note_type_filter {
-                notes.retain(|note| note.note_type == note_type);
+                if note_type != -1 {
+                    notes.retain(|note| note.note_type == note_type);
+                }
+            }
+            if let Some(search_text) = cleaned_search_text.as_deref() {
+                notes.retain(|note| {
+                    note.title.to_lowercase().contains(search_text)
+                        || note.content.to_lowercase().contains(search_text)
+                        || attachment_note_ids.contains(&note.id)
+                });
             }
 
             let start = ((page - 1) * size) as usize;
@@ -637,11 +667,37 @@ async fn handle_attachments(
 
     match path {
         "list" => {
-            let attachments = repo.list_all().await?;
-            let items = attachments
-                .iter()
-                .map(attachment_to_value)
-                .collect::<Vec<_>>();
+            let input_obj = unwrap_input_object(input);
+            let page = input_obj.get("page").and_then(as_i64).unwrap_or(1).max(1);
+            let size = input_obj.get("size").and_then(as_i64).unwrap_or(30).max(1);
+            let search_text = input_obj
+                .get("searchText")
+                .and_then(|v| v.as_str())
+                .map(|v| v.to_string());
+
+            let mut attachments = repo.list_all().await?;
+            if let Some(search_text) = search_text.as_deref() {
+                let search_text = search_text
+                    .trim()
+                    .trim_start_matches(&['@', '#'][..])
+                    .to_lowercase();
+                if !search_text.is_empty() {
+                    attachments.retain(|att| {
+                        att.filename.to_lowercase().contains(&search_text)
+                            || att.path.to_lowercase().contains(&search_text)
+                    });
+                }
+            }
+
+            let start = ((page - 1) * size) as usize;
+            let end = (start + size as usize).min(attachments.len());
+            let slice = if start < attachments.len() {
+                &attachments[start..end]
+            } else {
+                &[]
+            };
+
+            let items = slice.iter().map(attachment_to_value).collect::<Vec<_>>();
             Ok(Value::Array(items))
         }
         "delete" => {
