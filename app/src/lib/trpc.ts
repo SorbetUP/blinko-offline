@@ -56,6 +56,12 @@ const invokeLocal = async (path: string, input: unknown) => {
     }
     return { ok: true };
   }
+  if (path === 'analytics.dailyNoteCount') {
+    return await invoke('analytics_daily_note_count');
+  }
+  if (path === 'analytics.monthlyStats') {
+    return await invoke('analytics_monthly_stats', { input });
+  }
 
   // Fallbacks for unsupported commands in command-only mode
   if (path.endsWith('list') || path.endsWith('List')) return [];

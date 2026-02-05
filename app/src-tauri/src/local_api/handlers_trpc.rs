@@ -5,12 +5,14 @@ use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, Method, StatusCode};
 use axum::response::{IntoResponse, Response};
 use bytes::Bytes;
+use chrono::Utc;
 use serde_json::{json, Value};
 
 use crate::local_db::attachments::AttachmentRepository;
 use crate::local_db::notes::{Note, NoteInput, NoteRepository};
 use crate::local_db::settings::SettingsRepository;
 use crate::local_db::tags::{extract_tag_names, Tag, TagRelation, TagRepository};
+use crate::local_analytics;
 
 use super::LocalApiContext;
 use super::local_user;
@@ -170,7 +172,7 @@ async fn dispatch_trpc(
         return handle_list_or_empty(path);
     }
     if let Some(path) = proc_path.strip_prefix("analytics.") {
-        return handle_analytics(path);
+        return handle_analytics(state, path, input).await;
     }
     if let Some(path) = proc_path.strip_prefix("ai.") {
         return handle_ai(path);
@@ -813,9 +815,43 @@ fn handle_task(path: &str) -> Result<Value, String> {
     }
 }
 
-fn handle_analytics(path: &str) -> Result<Value, String> {
+async fn handle_analytics(
+    state: &LocalApiContext,
+    path: &str,
+    input: Option<Value>,
+) -> Result<Value, String> {
     match path {
-        "dailyNoteCount" | "monthlyStats" => Ok(Value::Array(vec![])),
+        "dailyNoteCount" => {
+            let rows = local_analytics::daily_note_count(&state.data_state.db.pool).await?;
+            let results = rows
+                .into_iter()
+                .map(|(date, count)| json!({ "date": date, "count": count }))
+                .collect::<Vec<_>>();
+            Ok(Value::Array(results))
+        }
+        "monthlyStats" => {
+            let input_obj = unwrap_input_object(input);
+            let month_str = input_obj
+                .get("month")
+                .and_then(|v| v.as_str())
+                .unwrap_or(&Utc::now().format("%Y-%m").to_string())
+                .to_string();
+
+            let stats = local_analytics::monthly_stats(&state.data_state.db.pool, &month_str).await?;
+            let tag_stats = stats
+                .tag_stats
+                .iter()
+                .map(|item| json!({ "tagName": item.tag_name, "count": item.count }))
+                .collect::<Vec<_>>();
+
+            Ok(json!({
+                "noteCount": stats.note_count,
+                "totalWords": stats.total_words,
+                "maxDailyWords": stats.max_daily_words,
+                "activeDays": stats.active_days,
+                "tagStats": tag_stats
+            }))
+        }
         _ => Ok(default_response(path)),
     }
 }

@@ -816,7 +816,6 @@
   "arguments": "Arguments",
   "environment-variables": "Environment Variables",
   "http-headers": "HTTP Headers",
-  "enabled": "Enabled",
   "no-mcp-servers": "No MCP servers configured",
   "add-mcp-server-hint": "Add an MCP server to extend AI capabilities with external tools",
   "example-mcp-servers": "Example MCP Servers:",
@@ -824,7 +823,6 @@
   "paste-mcp-json-desc": "Paste your mcp.json content here. It will automatically convert and create MCP servers.",
   "mcp-json-content": "mcp.json Content",
   "please-paste-json": "Please paste mcp.json content",
-  "import": "Import",
   "import-success": "Successfully imported {{count}} MCP server(s)",
   "import-partial-success": "Successfully imported {{success}} server(s), {{failed}} failed",
   "import-failed": "Failed to import MCP servers",
@@ -832,10 +830,14 @@
   "import-mcp-json-hint": "Click \"Import mcp.json\" to paste your MCP configuration, or manually add servers",
   "mcp-server-tools": "Tools available from {{serverName}}:",
   "view-tools": "Tools from {{serverName}}",
-  "close": "Close",
   "add": "Add",
   "enable-signin-footer": "Enable Signin Footer",
   "signin-footer-text": "Signin Footer Content",
   "signin-footer-desc": "Supports HTML: <a href='...'>link</a>, <strong>bold</strong>, <em>italic</em>, <br/>",
-  "signin-footer-placeholder": "e.g., <a href='https://blinko.space/'>Blinko</a> © 2026 Blinko. All rights reserved."
+  "signin-footer-placeholder": "e.g., <a href='https://blinko.space/'>Blinko</a> © 2026 Blinko. All rights reserved.",
+  "import-from-google-keep": "Import from Google Keep",
+  "import-from-google-keep-tip": "Upload a .zip exported from Google Takeout (Keep folder) or a single note .json file",
+  "google-keep-auto-tags": "Auto-tags",
+  "google-keep-auto-tags-desc": "Automatically add tags based on note content (credentials, email draft, course, etc.)",
+  "not-a-google-keep-export": "Not a Google Keep export. Please select a .zip or .json file."
 }

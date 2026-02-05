@@ -10,6 +10,7 @@ import { FileService } from '../lib/files';
 import path from 'path';
 import fs from 'fs';
 import { MarkdownImporter } from '../jobs/markdownJob';
+import { GoogleKeepImporter } from '../jobs/googleKeepJob';
 import { getPgBoss } from '../lib/pgBoss';
 import { prisma } from '../prisma';
 
@@ -161,6 +162,38 @@ export const taskRouter = router({
         }
       } catch (error) {
         throw new Error(error as string)
+      }
+    }),
+
+
+  importFromGoogleKeep: authProcedure.use(demoAuthMiddleware)
+    .input(z.object({
+      filePath: z.string(), // Path to .zip (Google Takeout/Keep) or single .json
+      autoTags: z.boolean().optional(),
+    }))
+    .mutation(async function* ({ input, ctx }) {
+      try {
+        const fileResult = await FileService.getFile(input.filePath);
+        const keepImporter = new GoogleKeepImporter();
+
+        for await (const result of keepImporter.importKeep(fileResult.path, ctx, {
+          autoTags: input.autoTags ?? true,
+        })) {
+          yield result;
+        }
+
+        try {
+          if (fileResult.isTemporary && fileResult.cleanup) {
+            await fileResult.cleanup();
+          } else {
+            await unlink(fileResult.path);
+          }
+          await FileService.deleteFile(input.filePath);
+        } catch (error) {
+          // ignore cleanup errors
+        }
+      } catch (error) {
+        throw new Error(error as string);
       }
     }),
 

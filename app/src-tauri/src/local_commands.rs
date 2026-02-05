@@ -4,6 +4,7 @@ use std::collections::HashSet;
 
 use crate::local_db::attachments::AttachmentRepository;
 use crate::local_db::notes::{Note, NoteInput, NoteRepository};
+use crate::local_analytics;
 use crate::local_runtime::{LocalDataState, LocalRuntimeState};
 
 #[derive(Debug, Deserialize, Default)]
@@ -45,6 +46,12 @@ pub struct NoteUpsertInput {
 pub struct AttachmentRef {
     pub id: Option<i64>,
     pub path: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+#[serde(default)]
+pub struct AnalyticsMonthlyInput {
+    pub month: Option<String>,
 }
 
 #[tauri::command]
@@ -213,6 +220,41 @@ pub async fn note_delete(
         .unwrap_or_else(|| "local".to_string());
     let _ = note_repo.delete_note(id, &device_id).await?;
     Ok(json!({ "ok": true }))
+}
+
+#[tauri::command]
+pub async fn analytics_daily_note_count(
+    state: tauri::State<'_, LocalDataState>,
+) -> Result<Value, String> {
+    let rows = local_analytics::daily_note_count(&state.db.pool).await?;
+    let data = rows
+        .into_iter()
+        .map(|(date, count)| json!({ "date": date, "count": count }))
+        .collect::<Vec<_>>();
+    Ok(Value::Array(data))
+}
+
+#[tauri::command]
+pub async fn analytics_monthly_stats(
+    state: tauri::State<'_, LocalDataState>,
+    input: Option<AnalyticsMonthlyInput>,
+) -> Result<Value, String> {
+    let month = input
+        .and_then(|i| i.month)
+        .unwrap_or_else(|| chrono::Utc::now().format("%Y-%m").to_string());
+    let stats = local_analytics::monthly_stats(&state.db.pool, &month).await?;
+    let tag_stats = stats
+        .tag_stats
+        .iter()
+        .map(|item| json!({ "tagName": item.tag_name, "count": item.count }))
+        .collect::<Vec<_>>();
+    Ok(json!({
+        "noteCount": stats.note_count,
+        "totalWords": stats.total_words,
+        "maxDailyWords": stats.max_daily_words,
+        "activeDays": stats.active_days,
+        "tagStats": tag_stats
+    }))
 }
 
 fn note_to_value(note: &Note, attachments: &[crate::local_db::attachments::Attachment]) -> Value {

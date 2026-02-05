@@ -848,5 +848,10 @@
   "enable-signin-footer": "Activer le pied de page de connexion",
   "signin-footer-text": "Contenu du pied de page de connexion",
   "signin-footer-desc": "Prend en charge HTML: <a href='...'>lien</a>, <strong>gras</strong>, <em>italique</em>, <br/>",
-  "signin-footer-placeholder": "Exemple: <a href='https://blinko.space/'>Blinko</a> © 2026 Blinko. Tous droits réservés."
+  "signin-footer-placeholder": "Exemple: <a href='https://blinko.space/'>Blinko</a> © 2026 Blinko. Tous droits réservés.",
+  "import-from-google-keep": "Importer depuis Google Keep",
+  "import-from-google-keep-tip": "Chargez un .zip exporte depuis Google Takeout (dossier Keep) ou un fichier .json d’une note",
+  "google-keep-auto-tags": "Tags automatiques",
+  "google-keep-auto-tags-desc": "Ajoute automatiquement des tags selon le contenu (identifiants, email, cours, etc.)",
+  "not-a-google-keep-export": "Ce n’est pas un export Google Keep. Choisissez un fichier .zip ou .json."
 }

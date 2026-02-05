@@ -6,6 +6,7 @@ pub mod local_runtime;
 pub mod local_db;
 pub mod local_api;
 pub mod local_commands;
+pub mod local_analytics;
 pub mod sync;
 use std::time::Duration;
 use tauri::Manager;
@@ -67,6 +68,8 @@ pub fn run() {
                 local_commands::note_get,
                 local_commands::note_upsert,
                 local_commands::note_delete,
+                local_commands::analytics_daily_note_count,
+                local_commands::analytics_monthly_stats,
                 sync::scheduler::sync_now,
                 sync::migration::import_remote_to_local_cmd,
                 sync::migration::export_local_to_remote_cmd,
