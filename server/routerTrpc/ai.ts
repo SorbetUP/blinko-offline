@@ -10,7 +10,8 @@ import { getAllPathTags } from '@server/lib/helper';
 import { ModelCapabilities } from '@server/aiServer/types';
 import { aiProviders, aiModels } from '@shared/lib/prismaZodType';
 import { fetchWithProxy } from '@server/lib/proxy';
-import { inferModelCapabilities } from '@shared/lib/modelTemplates';
+import { DEFAULT_MODEL_TEMPLATES, inferModelCapabilities } from '@shared/lib/modelTemplates';
+import { resolveApiKey } from '@server/aiServer/providers/resolveApiKey';
 
 export const aiRouter = router({
   embeddingUpsert: authProcedure
@@ -300,7 +301,8 @@ export const aiRouter = router({
               apiKey: provider.apiKey,
               baseURL: provider.baseURL,
               modelKey,
-              apiVersion: (provider.config as any)?.apiVersion
+              apiVersion: (provider.config as any)?.apiVersion,
+              providerConfig: provider.config
             });
 
             // Test simple generation
@@ -624,9 +626,27 @@ export const aiRouter = router({
           }
 
           case 'openai': {
+            if ((provider.config as any)?.authMode === 'codex-cli') {
+              const openaiTemplates = DEFAULT_MODEL_TEMPLATES.filter((t) => {
+                return (
+                  t.modelKey.startsWith('gpt-') ||
+                  t.modelKey.startsWith('text-') ||
+                  t.modelKey.startsWith('dall-e') ||
+                  t.modelKey.startsWith('tts-')
+                );
+              });
+              modelList = openaiTemplates.map((t) => ({
+                id: t.modelKey,
+                name: t.modelKey,
+                description: '',
+                capabilities: inferModelCapabilities(t.modelKey)
+              }));
+              break;
+            }
             const endpoint = provider.baseURL || 'https://api.openai.com/v1';
+            const apiKey = resolveApiKey({ provider: provider.provider, apiKey: provider.apiKey, providerConfig: provider.config });
             const response = await proxiedFetch(`${endpoint}/models`, {
-              headers: { 'Authorization': `Bearer ${provider.apiKey}` }
+              headers: { 'Authorization': `Bearer ${apiKey}` }
             });
             const data = await response.json() as any;
             modelList = data.data?.map((model: any) => ({

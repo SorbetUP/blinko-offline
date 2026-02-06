@@ -1,3 +1,4 @@
+import type { MouseEvent, PointerEvent } from 'react';
 import { Image } from '@heroui/react';
 import { PhotoProvider, PhotoView } from 'react-photo-view';
 
@@ -11,9 +12,12 @@ interface ImageWrapperProps {
 export const ImageWrapper = ({ src = '', width, height, alt }: ImageWrapperProps) => {
   const props = { width, height, alt }
   if (!src) return null;
+  const stopCardClick = (e: MouseEvent | PointerEvent) => {
+    e.stopPropagation();
+  };
   
   return (
-    <div className='markdown-image-wrapper w-full'>
+    <div className='markdown-image-wrapper w-full' onClick={stopCardClick} onPointerDown={stopCardClick}>
       <PhotoProvider>
         <PhotoView src={src} >
           <Image src={src} {...props}

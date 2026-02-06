@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type MouseEvent, type PointerEvent } from 'react';
 import { FileType } from '../Editor/type';
 import { Image } from '@heroui/react';
 import { PhotoProvider, PhotoView } from 'react-photo-view';
@@ -97,6 +97,10 @@ export const ImageThumbnailRender = ({ src, className }: { src: string, classNam
 const ImageRender = observer((props: IProps) => {
   const { files, preview = false, columns } = props
   const isPc = useMediaQuery('(min-width: 768px)')
+  const stopCardClick = (e: MouseEvent | PointerEvent) => {
+    // Prevent BlinkoCard click handler from opening the note when users intended to preview the image.
+    e.stopPropagation();
+  };
 
   const imageRenderClassName = useMemo(() => {
     if (!preview) {
@@ -121,7 +125,7 @@ const ImageRender = observer((props: IProps) => {
       )}
       <div className='w-full'>
         <PhotoView src={getBlinkoEndpoint(`${file.preview}?token=${RootStore.Get(UserStore).tokenData.value?.token}`)}>
-          <div>
+          <div onClick={stopCardClick} onPointerDown={stopCardClick}>
             <ImageThumbnailRender
               src={file.preview}
               className={`mb-4 ${imageHeight} object-cover md:w-[1000px]`}

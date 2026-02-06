@@ -4,7 +4,7 @@ import { PhotoProvider, PhotoView } from 'react-photo-view';
 import filesize  from 'filesize';
 import dayjs from '@/lib/dayjs';
 import { FileIcons } from '@/components/Common/AttachmentRender/FileIcon';
-import { memo, useCallback, useMemo } from 'react';
+import { memo, useCallback, useMemo, type MouseEvent, type PointerEvent } from 'react';
 import { Draggable, Droppable } from 'react-beautiful-dnd-next';
 import { useTranslation } from 'react-i18next';
 import { type ResourceType } from '@shared/lib/types';
@@ -37,6 +37,10 @@ export const ResourceItemPreview = ({
   const { t } = useTranslation();
   const isImage = item.type?.startsWith('image/');
   const isS3File = item.path?.includes('s3file');
+  const stopParentClick = (e: MouseEvent | PointerEvent) => {
+    // Prevent opening/selecting the resource/note when the user just wants to preview the image.
+    e.stopPropagation();
+  };
 
   const fileNameAndExt = useMemo(() => {
     const lastDotIndex = item.name.lastIndexOf('.');
@@ -54,7 +58,7 @@ export const ResourceItemPreview = ({
       {isImage ? (
         <PhotoProvider>
           <PhotoView src={getBlinkoEndpoint(`${item.path}?token=${RootStore.Get(UserStore).tokenData.value?.token}`)}>
-            <div>
+            <div onClick={stopParentClick} onPointerDown={stopParentClick}>
               <ImageThumbnailRender src={item.path} className="!w-[28px] !h-[28px] object-cover rounded" />
             </div>
           </PhotoView>

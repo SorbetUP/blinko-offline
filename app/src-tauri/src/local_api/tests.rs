@@ -6,6 +6,7 @@ mod tests {
     use reqwest::{Client, multipart};
     use serde_json::Value;
     use tokio::net::TcpListener;
+    use uuid::Uuid;
 
     use crate::local_api::{build_context, start_local_api, local_user};
     use crate::local_db::LocalDb;
@@ -15,7 +16,9 @@ mod tests {
 
     fn temp_paths() -> RuntimePaths {
         let pid = std::process::id();
-        let root = std::env::temp_dir().join(format!("blinko_local_api_test_{pid}"));
+        // Tests run concurrently; make sure each test uses an isolated DB path.
+        let run_id = Uuid::new_v4();
+        let root = std::env::temp_dir().join(format!("blinko_local_api_test_{pid}_{run_id}"));
         RuntimePaths::from_root(root)
     }
 
@@ -152,6 +155,16 @@ mod tests {
         assert!(download.status().is_success());
         let downloaded = download.bytes().await.unwrap();
         assert_eq!(downloaded.as_ref(), file_bytes.as_slice());
+
+        // Regression: `<img src=...>` cannot send Authorization headers, so allow `?token=...`.
+        let download_by_query = client
+            .get(format!("{base}{file_path}?token={token}"))
+            .send()
+            .await
+            .unwrap();
+        assert!(download_by_query.status().is_success());
+        let downloaded_by_query = download_by_query.bytes().await.unwrap();
+        assert_eq!(downloaded_by_query.as_ref(), file_bytes.as_slice());
     }
 
     #[tokio::test]

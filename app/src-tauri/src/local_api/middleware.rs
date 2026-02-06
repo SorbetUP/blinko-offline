@@ -18,7 +18,10 @@ pub async fn auth_middleware(
         return Ok(next.run(req).await);
     }
 
-    let token = extract_bearer(req.headers().get(axum::http::header::AUTHORIZATION));
+    // Support both Authorization header and `?token=...` query param.
+    // Query token is needed for `<img src=...>` and similar cases where headers can't be set.
+    let token = extract_bearer(req.headers().get(axum::http::header::AUTHORIZATION))
+        .or_else(|| extract_query_token(req.uri()));
     match token {
         Some(value) if value == state.token => Ok(next.run(req).await),
         _ => Ok(StatusCode::UNAUTHORIZED.into_response()),
@@ -52,4 +55,16 @@ fn extract_bearer(header: Option<&axum::http::HeaderValue>) -> Option<String> {
     } else {
         None
     }
+}
+
+fn extract_query_token(uri: &axum::http::Uri) -> Option<String> {
+    let query = uri.query()?;
+    for pair in query.split('&') {
+        let (key, value) = pair.split_once('=')?;
+        if key == "token" && !value.is_empty() {
+            // Local API tokens are UUID-like strings, so this is sufficient for now.
+            return Some(value.to_string());
+        }
+    }
+    None
 }

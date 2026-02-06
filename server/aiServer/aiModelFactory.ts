@@ -277,7 +277,8 @@ export class AiModelFactory {
       apiKey: mainModel.provider.apiKey,
       baseURL: mainModel.provider.baseURL,
       modelKey: mainModel.modelKey,
-      apiVersion: (mainModel.provider.config as any)?.apiVersion
+      apiVersion: (mainModel.provider.config as any)?.apiVersion,
+      providerConfig: mainModel.provider.config
     };
 
     // Get LLM instance
@@ -291,7 +292,8 @@ export class AiModelFactory {
         apiKey: embeddingModel.provider.apiKey,
         baseURL: embeddingModel.provider.baseURL,
         modelKey: embeddingModel.modelKey,
-        apiVersion: (embeddingModel.provider.config as any)?.apiVersion
+        apiVersion: (embeddingModel.provider.config as any)?.apiVersion,
+        providerConfig: embeddingModel.provider.config
       };
       embeddings = await embeddingProvider.getEmbeddingModel(embeddingConfig);
     }
@@ -304,7 +306,8 @@ export class AiModelFactory {
         apiKey: audioModel.provider.apiKey,
         baseURL: audioModel.provider.baseURL,
         modelKey: audioModel.modelKey,
-        apiVersion: (audioModel.provider.config as any)?.apiVersion
+        apiVersion: (audioModel.provider.config as any)?.apiVersion,
+        providerConfig: audioModel.provider.config
       };
       audio = await audioProvider.getAudioModel(audioConfig);
     }

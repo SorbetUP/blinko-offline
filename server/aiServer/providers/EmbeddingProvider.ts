@@ -4,6 +4,7 @@ import { createAzure } from '@ai-sdk/azure';
 import { createVoyage } from 'voyage-ai-provider';
 import { createOllama } from 'ollama-ai-provider';
 import { BaseProvider } from './BaseProvider';
+import { resolveApiKey } from './resolveApiKey';
 
 interface EmbeddingConfig {
   provider: string;
@@ -11,6 +12,7 @@ interface EmbeddingConfig {
   baseURL?: any;
   modelKey: string;
   apiVersion?: any;
+  providerConfig?: any;
 }
 
 export class EmbeddingProvider extends BaseProvider {
@@ -20,8 +22,9 @@ export class EmbeddingProvider extends BaseProvider {
 
     switch (config.provider.toLowerCase()) {
       case 'openai':
+        const apiKey = resolveApiKey({ provider: config.provider, apiKey: config.apiKey, providerConfig: config.providerConfig });
         return createOpenAI({
-          apiKey: config.apiKey,
+          apiKey: apiKey,
           baseURL: config.baseURL || undefined,
           fetch: this.proxiedFetch
         }).textEmbeddingModel(config.modelKey);
@@ -52,8 +55,9 @@ export class EmbeddingProvider extends BaseProvider {
       case 'custom':
       default:
         // Default to OpenAI-compatible API
+        const apiKey2 = resolveApiKey({ provider: config.provider, apiKey: config.apiKey, providerConfig: config.providerConfig });
         return createOpenAI({
-          apiKey: config.apiKey,
+          apiKey: apiKey2,
           baseURL: config.baseURL || undefined,
           fetch: this.proxiedFetch
         }).textEmbeddingModel(config.modelKey);

@@ -3,6 +3,7 @@ import { BaseProvider } from './BaseProvider';
 import { OpenAIVoice } from '@mastra/voice-openai';
 import { MastraVoice } from '@mastra/core/voice';
 import OpenAI from 'openai';
+import { resolveApiKey } from './resolveApiKey';
 
 interface AudioConfig {
   provider: string;
@@ -12,6 +13,7 @@ interface AudioConfig {
   apiVersion?: string;
   speaker?: string;
   speed?: number;
+  providerConfig?: any;
 }
 
 export class AudioProvider extends BaseProvider {
@@ -20,14 +22,15 @@ export class AudioProvider extends BaseProvider {
 
     switch (config.provider.toLowerCase()) {
       case 'openai':
-        if (config.apiKey) {
+        const apiKey = resolveApiKey({ provider: config.provider, apiKey: config.apiKey, providerConfig: config.providerConfig });
+        if (apiKey) {
           const openAIVoice = new OpenAIVoice({
             speechModel: {
-              apiKey: config.apiKey,
+              apiKey: apiKey,
             },
             listeningModel: {
               name: config.modelKey as any || "whisper-1",
-              apiKey: config.apiKey,
+              apiKey: apiKey,
             },
           });
           return openAIVoice as unknown as MastraVoice
@@ -40,18 +43,19 @@ export class AudioProvider extends BaseProvider {
         return null;
       case 'custom':
       default:
-        if (config.apiKey) {
+        const apiKey2 = resolveApiKey({ provider: config.provider, apiKey: config.apiKey, providerConfig: config.providerConfig });
+        if (apiKey2) {
           const openAIVoice = new OpenAIVoice({
             speechModel: {
-              apiKey: config.apiKey,
+              apiKey: apiKey2,
             },
             listeningModel: {
               name: config.modelKey as any || "whisper-1",
-              apiKey: config.apiKey,
+              apiKey: apiKey2,
             },
           });
           openAIVoice.listeningClient = new OpenAI({
-            apiKey: config.apiKey,
+            apiKey: apiKey2,
             baseURL: config.baseURL,
             fetch: this.proxiedFetch,
           });

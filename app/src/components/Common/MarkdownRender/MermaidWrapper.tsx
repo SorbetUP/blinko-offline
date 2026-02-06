@@ -37,7 +37,7 @@ export const MermaidWrapper: React.FC<MermaidWrapperProps> = ({ content }) => {
   }, [content]);
 
   return (
-    <div className="mermaid-wrapper">
+    <div className="mermaid-wrapper" onClick={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()}>
       {svgUrl && (
         <PhotoProvider>
           <PhotoView src={svgUrl}>

@@ -8,6 +8,9 @@ import { createOpenRouter } from '@openrouter/ai-sdk-provider';
 import { createXai } from '@ai-sdk/xai';
 import { createAzure } from '@ai-sdk/azure';
 import { BaseProvider } from './BaseProvider';
+import { resolveApiKey } from './resolveApiKey';
+import { CodexCliLanguageModel } from './cli/CodexCliLanguageModel';
+import { ClaudeCodeCliLanguageModel } from './cli/ClaudeCodeCliLanguageModel';
 
 interface LLMConfig {
   provider: string;
@@ -15,25 +18,42 @@ interface LLMConfig {
   baseURL?: any;
   modelKey: string;
   apiVersion?: any;
+  providerConfig?: any;
 }
 
 export class LLMProvider extends BaseProvider {
   async getLanguageModel(config: LLMConfig): Promise<LanguageModelV1> {
     await this.ensureInitialized();
     switch (config.provider.toLowerCase()) {
-      case 'openai':
+      case 'openai': {
+        if (config.providerConfig?.authMode === 'codex-cli') {
+          return new CodexCliLanguageModel({
+            modelId: config.modelKey,
+            cliPath: config.providerConfig?.cliPath,
+          });
+        }
+        const apiKey = resolveApiKey({ provider: config.provider, apiKey: config.apiKey, providerConfig: config.providerConfig });
         return createOpenAI({
-          apiKey: config.apiKey,
+          apiKey: apiKey,
           baseURL: config.baseURL || undefined,
           fetch: this.proxiedFetch
         }).languageModel(config.modelKey);
+      }
 
-      case 'anthropic':
+      case 'anthropic': {
+        if (config.providerConfig?.authMode === 'claude-code-cli') {
+          return new ClaudeCodeCliLanguageModel({
+            modelId: config.modelKey,
+            cliPath: config.providerConfig?.cliPath,
+          });
+        }
+        const apiKey = resolveApiKey({ provider: config.provider, apiKey: config.apiKey, providerConfig: config.providerConfig });
         return createAnthropic({
-          apiKey: config.apiKey,
+          apiKey: apiKey,
           baseURL: config.baseURL || undefined,
           fetch: this.proxiedFetch
         }).languageModel(config.modelKey);
+      }
 
       case 'gemini':
       case 'google':
@@ -78,8 +98,11 @@ export class LLMProvider extends BaseProvider {
 
       case 'custom':
       default:
+        // Allow OpenAI-compatible providers to use `${env:VAR}` interpolation.
+        // Note: this only supports OpenAI/Anthropic defaults; custom providers should store keys explicitly.
+        const apiKey = resolveApiKey({ provider: config.provider, apiKey: config.apiKey, providerConfig: config.providerConfig });
         return createOpenAI({
-          apiKey: config.apiKey,
+          apiKey: apiKey,
           baseURL: config.baseURL || undefined,
           fetch: this.proxiedFetch
         }).languageModel(config.modelKey);

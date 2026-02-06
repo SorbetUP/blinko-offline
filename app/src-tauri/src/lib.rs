@@ -90,7 +90,15 @@ pub fn run() {
                 check_accessibility_permissions,
                 show_quicktool,
                 set_desktop_theme,
-                set_desktop_colors
+                set_desktop_colors,
+                ollama_status,
+                ollama_install_managed,
+                ollama_update_managed,
+                ollama_start,
+                ollama_stop,
+                ollama_list_models,
+                ollama_pull_model,
+                ollama_delete_model
             ])
             .setup(|app| {
                 let runtime_info = match local_runtime::init_local_runtime(&app.handle()) {
@@ -128,6 +136,7 @@ pub fn run() {
 
                 let data_state = local_runtime::LocalDataState::new(db.clone(), config.clone(), info.paths.clone());
                 app.manage(data_state.clone());
+                app.manage(desktop::ollama::OllamaManagerState::default());
 
                 let vditor_root = local_api::resolve_vditor_root(&app.handle());
                 let context = local_api::build_context(
