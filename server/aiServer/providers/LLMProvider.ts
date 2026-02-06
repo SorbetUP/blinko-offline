@@ -63,8 +63,21 @@ export class LLMProvider extends BaseProvider {
         }).languageModel(config.modelKey);
 
       case 'ollama':
+        // Be defensive: users sometimes paste `http:// localhost:11434` or include invisible chars.
+        // Also avoid producing `undefined/api` when baseURL is missing.
+        const rawBase =
+          typeof config.baseURL === 'string'
+            ? config.baseURL
+            : config.baseURL == null
+              ? ''
+              : String(config.baseURL);
+        const cleanedBase = rawBase.trim().replace(/[\s\u200B\uFEFF\u200E\u200F]+/g, '');
+        const normalizedBase = cleanedBase
+          ? cleanedBase.replace(/\/+$/, '').replace(/\/api$/, '') + '/api'
+          : undefined;
+
         return createOllama({
-          baseURL: config.baseURL?.trim().replace(/\/api$/, '') + '/api' || undefined,
+          baseURL: normalizedBase,
           fetch: this.proxiedFetch
         }).languageModel(config.modelKey);
 

@@ -50,6 +50,20 @@ export default observer(function ProviderCard({ provider }: ProviderCardProps) {
   const [isModelsCollapsed, setIsModelsCollapsed] = useState(false);
   const [selectedModel, setSelectedModel] = useState('');
   const [availableModels, setAvailableModels] = useState<any[]>([]);
+  const providerType = (provider.provider || '').toLowerCase();
+  const authMode = (provider.config as any)?.authMode as string | undefined;
+  const ollamaManaged = (provider.config as any)?.ollamaManaged as boolean | undefined;
+
+  const authModeLabel =
+    authMode === 'env'
+      ? t('auth-env-var')
+      : authMode === 'codex-cli'
+        ? t('auth-codex-cli')
+        : authMode === 'claude-code-cli'
+          ? t('auth-claude-code-cli')
+          : authMode
+            ? t('auth-api-key')
+            : null;
 
   // Load collapse state from localStorage
   useEffect(() => {
@@ -109,7 +123,7 @@ export default observer(function ProviderCard({ provider }: ProviderCardProps) {
   };
 
   return (
-    <Card className="mb-4 bg-secondbackground group" shadow='none'>
+    <Card className="bg-secondbackground group" shadow='none'>
       <CardBody>
         <div className={`flex ${isMobile ? 'flex-col space-y-3' : 'justify-between items-start'} mb-3`}>
           <div className="flex items-center gap-3">
@@ -126,12 +140,24 @@ export default observer(function ProviderCard({ provider }: ProviderCardProps) {
             </div>
             <div className="flex-1 min-w-0">
               <h3 className="text-lg font-bold truncate">{provider.title}</h3>
-              {provider.baseURL && (
-                <p className="text-tiny text-gray-400 truncate">{provider.baseURL}</p>
+              <div className="flex flex-wrap items-center gap-1 mt-1">
+                {!!authModeLabel && (
+                  <Chip size="sm" variant="flat" color="primary">
+                    {authModeLabel}
+                  </Chip>
+                )}
+                {providerType === 'ollama' && ollamaManaged && (
+                  <Chip size="sm" variant="flat" color="success">
+                    {t('ollama-managed-mode')}
+                  </Chip>
+                )}
+              </div>
+              {!!provider.baseURL && !authMode?.endsWith('-cli') && (
+                <p className="text-tiny text-gray-400 truncate mt-1">{provider.baseURL}</p>
               )}
             </div>
           </div>
-          <div className={`flex gap-2 ${isMobile ? 'self-end' : 'opacity-0 group-hover:opacity-100 transition-opacity'}`}>
+          <div className={`flex gap-2 ${isMobile ? 'self-end' : 'self-end'}`}>
             <Button
               size="sm"
               variant="flat"

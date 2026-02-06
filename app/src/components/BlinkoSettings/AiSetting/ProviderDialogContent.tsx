@@ -1,5 +1,5 @@
 import { observer } from 'mobx-react-lite';
-import { Button, Input, Select, SelectItem, Card, CardBody, Switch } from '@heroui/react';
+import { Button, Input, Card, CardBody, Switch, Tabs, Tab, Chip, Progress, Divider, Tooltip } from '@heroui/react';
 import { Icon } from '@/components/Common/Iconify/icons';
 import { useTranslation } from 'react-i18next';
 import { useState, useEffect } from 'react';
@@ -84,6 +84,9 @@ export default observer(function ProviderDialogContent({ provider }: ProviderDia
   const isOpenAI = providerType === 'openai';
   const isAnthropic = providerType === 'anthropic';
 
+  const [providerConfigTab, setProviderConfigTab] = useState<'connection' | 'local'>('connection');
+  const [ollamaShowLogs, setOllamaShowLogs] = useState(false);
+
   const [ollamaInfo, setOllamaInfo] = useState<{
     status: OllamaStatus | null;
     installProgress: OllamaInstallProgress | null;
@@ -109,6 +112,12 @@ export default observer(function ProviderDialogContent({ provider }: ProviderDia
       setSelectedTemplate(provider.provider);
     }
   }, [provider]);
+
+  useEffect(() => {
+    if (!isOllama && providerConfigTab === 'local') {
+      setProviderConfigTab('connection');
+    }
+  }, [isOllama, providerConfigTab]);
 
   const refreshOllamaStatus = async () => {
     try {
@@ -265,254 +274,465 @@ export default observer(function ProviderDialogContent({ provider }: ProviderDia
 
   // Step 2: Configuration
   const renderConfiguration = () => {
-    const template = PROVIDER_TEMPLATES.find(t => t.value === selectedTemplate);
+    const template = PROVIDER_TEMPLATES.find((t) => t.value === selectedTemplate);
     const ollamaManaged = (editingProvider.config as any)?.ollamaManaged ?? true;
+
     const authMode = (editingProvider.config as any)?.authMode || 'api-key';
     const usesEnvApiKey = (isOpenAI || isAnthropic) && authMode === 'env';
     const usesCodexCli = isOpenAI && authMode === 'codex-cli';
     const usesClaudeCodeCli = isAnthropic && authMode === 'claude-code-cli';
     const usesCliAuth = usesCodexCli || usesClaudeCodeCli;
+
     const apiKeyEnvVar =
       ((editingProvider.config as any)?.apiKeyEnvVar as string | undefined) ||
       (isOpenAI ? 'OPENAI_API_KEY' : isAnthropic ? 'ANTHROPIC_API_KEY' : '');
     const cliPath = ((editingProvider.config as any)?.cliPath as string | undefined) || '';
 
-    return (
-      <div className="space-y-4">
-        <div className="flex items-center justify-center gap-3 mb-6">
-          <ProviderIcon provider={selectedTemplate} className="w-8 h-8" />
-          <h3 className="text-lg font-semibold">
-            {selectedTemplate === 'custom' ? t('custom-configuration') : template?.label}
-          </h3>
-        </div>
+    const setAuthModeValue = (value: string) => {
+      setEditingProvider((prev) => ({
+        ...prev,
+        apiKey: value === 'api-key' ? (prev.apiKey || '') : '',
+        config: {
+          ...(prev.config as any || {}),
+          authMode: value,
+          apiKeyEnvVar:
+            value === 'env'
+              ? ((prev.config as any)?.apiKeyEnvVar || (isOpenAI ? 'OPENAI_API_KEY' : 'ANTHROPIC_API_KEY'))
+              : (prev.config as any)?.apiKeyEnvVar,
+          cliPath:
+            value.endsWith('-cli')
+              ? ((prev.config as any)?.cliPath || '')
+              : (prev.config as any)?.cliPath,
+        },
+      }));
+    };
 
-        <Input
-          label={t('provider-name')}
-          placeholder={t('enter-provider-name')}
-          value={editingProvider.title || ''}
-          onValueChange={(value) => {
-            setEditingProvider(prev => ({ ...prev, title: value }));
-          }}
-        />
+    const connectionPanel = (
+      <div className="space-y-4">
+        <Card shadow="none" className="bg-secondbackground">
+          <CardBody className="space-y-3">
+            <div className="flex items-center gap-2 text-sm font-medium text-default-700">
+              <Icon icon="hugeicons:settings-02" width="16" height="16" />
+              <span>{t('provider-settings-basic')}</span>
+            </div>
+
+            <Input
+              label={t('provider-name')}
+              placeholder={t('enter-provider-name')}
+              value={editingProvider.title || ''}
+              onValueChange={(value) => {
+                setEditingProvider((prev) => ({ ...prev, title: value }));
+              }}
+            />
+          </CardBody>
+        </Card>
 
         {(isOpenAI || isAnthropic) && (
-          <div className="space-y-3">
-            <Select
-              label={t('auth-method')}
-              selectedKeys={[authMode]}
-              onSelectionChange={(keys) => {
-                const value = String(Array.from(keys)[0] || 'api-key');
-                setEditingProvider(prev => ({
-                  ...prev,
-                  apiKey: value === 'api-key' ? (prev.apiKey || '') : '',
-                  config: {
-                    ...(prev.config as any || {}),
-                    authMode: value,
-                    apiKeyEnvVar:
-                      value === 'env'
-                        ? ((prev.config as any)?.apiKeyEnvVar || (isOpenAI ? 'OPENAI_API_KEY' : 'ANTHROPIC_API_KEY'))
-                        : (prev.config as any)?.apiKeyEnvVar
-                  }
-                }));
-              }}
-            >
-              <SelectItem key="api-key">{t('auth-api-key')}</SelectItem>
-              <SelectItem key="env">{t('auth-env-var')}</SelectItem>
-              {isOpenAI && <SelectItem key="codex-cli">{t('auth-codex-cli')}</SelectItem>}
-              {isAnthropic && <SelectItem key="claude-code-cli">{t('auth-claude-code-cli')}</SelectItem>}
-            </Select>
+          <Card shadow="none" className="bg-secondbackground">
+            <CardBody className="space-y-3">
+              <div className="flex items-center gap-2 text-sm font-medium text-default-700">
+                <Icon icon="hugeicons:shield-user" width="16" height="16" />
+                <span>{t('auth-method')}</span>
+              </div>
 
-            {usesEnvApiKey && (
-              <>
-                <Input
-                  label={t('env-var-name')}
-                  placeholder={isOpenAI ? 'OPENAI_API_KEY' : 'ANTHROPIC_API_KEY'}
-                  value={apiKeyEnvVar}
-                  onValueChange={(value) => {
-                    setEditingProvider(prev => ({
-                      ...prev,
-                      config: {
-                        ...(prev.config as any || {}),
-                        apiKeyEnvVar: value
-                      }
-                    }));
-                  }}
-                />
-                <div className="text-xs text-default-500 leading-5">
-                  {t('auth-env-var-hint')}
-                </div>
-              </>
-            )}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                <Card
+                  shadow="none"
+                  isPressable
+                  className={`bg-default-50 border ${authMode === 'api-key' ? 'border-primary' : 'border-default-200 hover:border-default-300'}`}
+                  onPress={() => setAuthModeValue('api-key')}
+                >
+                  <CardBody className="p-3">
+                    <div className="flex items-start gap-3">
+                      <div className={`mt-0.5 ${authMode === 'api-key' ? 'text-primary' : 'text-default-500'}`}>
+                        <Icon icon="hugeicons:key-01" width="18" height="18" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <div className="font-medium">{t('auth-api-key')}</div>
+                          {authMode === 'api-key' && (
+                            <Chip size="sm" color="primary" variant="flat">
+                              {t('active')}
+                            </Chip>
+                          )}
+                        </div>
+                        <div className="text-xs text-default-500">
+                          {t('auth-api-key-desc')}
+                        </div>
+                      </div>
+                    </div>
+                  </CardBody>
+                </Card>
 
-            {usesCliAuth && (
-              <>
-                <Input
-                  label={t('cli-path')}
-                  placeholder={usesCodexCli ? 'codex' : 'claude'}
-                  value={cliPath}
-                  onValueChange={(value) => {
-                    setEditingProvider(prev => ({
-                      ...prev,
-                      config: {
-                        ...(prev.config as any || {}),
-                        cliPath: value
-                      }
-                    }));
-                  }}
-                />
-                <div className="text-xs text-default-500 leading-5">
-                  {usesCodexCli ? t('auth-codex-cli-hint') : t('auth-claude-code-cli-hint')}
+                <Card
+                  shadow="none"
+                  isPressable
+                  className={`bg-default-50 border ${authMode === 'env' ? 'border-primary' : 'border-default-200 hover:border-default-300'}`}
+                  onPress={() => setAuthModeValue('env')}
+                >
+                  <CardBody className="p-3">
+                    <div className="flex items-start gap-3">
+                      <div className={`mt-0.5 ${authMode === 'env' ? 'text-primary' : 'text-default-500'}`}>
+                        <Icon icon="hugeicons:code-01" width="18" height="18" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <div className="font-medium">{t('auth-env-var')}</div>
+                          {authMode === 'env' && (
+                            <Chip size="sm" color="primary" variant="flat">
+                              {t('active')}
+                            </Chip>
+                          )}
+                        </div>
+                        <div className="text-xs text-default-500">
+                          {t('auth-env-var-desc')}
+                        </div>
+                      </div>
+                    </div>
+                  </CardBody>
+                </Card>
+
+                {isOpenAI && (
+                  <Card
+                    shadow="none"
+                    isPressable
+                    className={`bg-default-50 border ${authMode === 'codex-cli' ? 'border-primary' : 'border-default-200 hover:border-default-300'}`}
+                    onPress={() => setAuthModeValue('codex-cli')}
+                  >
+                    <CardBody className="p-3">
+                      <div className="flex items-start gap-3">
+                        <div className={`mt-0.5 ${authMode === 'codex-cli' ? 'text-primary' : 'text-default-500'}`}>
+                          <Icon icon="hugeicons:terminal-01" width="18" height="18" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <div className="font-medium">{t('auth-codex-cli')}</div>
+                            {authMode === 'codex-cli' && (
+                              <Chip size="sm" color="primary" variant="flat">
+                                {t('active')}
+                              </Chip>
+                            )}
+                          </div>
+                          <div className="text-xs text-default-500">
+                            {t('auth-codex-cli-desc')}
+                          </div>
+                        </div>
+                      </div>
+                    </CardBody>
+                  </Card>
+                )}
+
+                {isAnthropic && (
+                  <Card
+                    shadow="none"
+                    isPressable
+                    className={`bg-default-50 border ${authMode === 'claude-code-cli' ? 'border-primary' : 'border-default-200 hover:border-default-300'}`}
+                    onPress={() => setAuthModeValue('claude-code-cli')}
+                  >
+                    <CardBody className="p-3">
+                      <div className="flex items-start gap-3">
+                        <div className={`mt-0.5 ${authMode === 'claude-code-cli' ? 'text-primary' : 'text-default-500'}`}>
+                          <Icon icon="hugeicons:terminal-01" width="18" height="18" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <div className="font-medium">{t('auth-claude-code-cli')}</div>
+                            {authMode === 'claude-code-cli' && (
+                              <Chip size="sm" color="primary" variant="flat">
+                                {t('active')}
+                              </Chip>
+                            )}
+                          </div>
+                          <div className="text-xs text-default-500">
+                            {t('auth-claude-code-cli-desc')}
+                          </div>
+                        </div>
+                      </div>
+                    </CardBody>
+                  </Card>
+                )}
+              </div>
+
+              {usesEnvApiKey && (
+                <div className="space-y-2">
+                  <Divider />
+                  <Input
+                    label={t('env-var-name')}
+                    placeholder={isOpenAI ? 'OPENAI_API_KEY' : 'ANTHROPIC_API_KEY'}
+                    value={apiKeyEnvVar}
+                    onValueChange={(value) => {
+                      setEditingProvider((prev) => ({
+                        ...prev,
+                        config: {
+                          ...(prev.config as any || {}),
+                          apiKeyEnvVar: value,
+                        },
+                      }));
+                    }}
+                  />
+                  <div className="text-xs text-default-500 leading-5">
+                    {t('auth-env-var-hint')}
+                  </div>
                 </div>
-              </>
-            )}
-          </div>
+              )}
+
+              {usesCliAuth && (
+                <div className="space-y-2">
+                  <Divider />
+                  <div className="flex items-center gap-2 text-sm font-medium text-default-700">
+                    <Icon icon="hugeicons:terminal-02" width="16" height="16" />
+                    <span>{t('cli-setup')}</span>
+                    <Chip size="sm" color="warning" variant="flat">
+                      {t('experimental')}
+                    </Chip>
+                  </div>
+                  <Input
+                    label={t('cli-path')}
+                    placeholder={usesCodexCli ? 'codex' : 'claude'}
+                    value={cliPath}
+                    onValueChange={(value) => {
+                      setEditingProvider((prev) => ({
+                        ...prev,
+                        config: {
+                          ...(prev.config as any || {}),
+                          cliPath: value,
+                        },
+                      }));
+                    }}
+                  />
+                  <div className="text-xs text-default-500 leading-5">
+                    {usesCodexCli ? t('auth-codex-cli-hint') : t('auth-claude-code-cli-hint')}
+                  </div>
+                  <div className="rounded-md bg-default-50 border border-default-200 p-3 text-xs text-default-600 leading-5">
+                    <div className="font-medium text-default-700 mb-1">{t('cli-requirements')}</div>
+                    <div>1. {t('cli-requirements-1')}</div>
+                    <div>2. {t('cli-requirements-2')}</div>
+                    <div>3. {t('cli-requirements-3')}</div>
+                  </div>
+                </div>
+              )}
+            </CardBody>
+          </Card>
         )}
 
         {!usesCliAuth && (
-          <Input
-            label={t('base-url')}
-            placeholder={t('enter-api-base-url')}
-            value={editingProvider.baseURL || ''}
-            onValueChange={(value) => {
-              setEditingProvider(prev => ({ ...prev, baseURL: value }));
-            }}
-          />
-        )}
+          <Card shadow="none" className="bg-secondbackground">
+            <CardBody className="space-y-3">
+              <div className="flex items-center gap-2 text-sm font-medium text-default-700">
+                <Icon icon="hugeicons:link-04" width="16" height="16" />
+                <span>{t('provider-connection')}</span>
+              </div>
 
-        {!usesCliAuth && !usesEnvApiKey && (
-          <Input
-            label={t('api-key')}
-            placeholder={t('enter-api-key')}
-            type="password"
-            value={editingProvider.apiKey || ''}
-            onValueChange={(value) => {
-              setEditingProvider(prev => ({ ...prev, apiKey: value }));
-            }}
-            endContent={<Copy size={20} content={editingProvider.apiKey ?? ''} />}
-          />
+              <Input
+                label={t('base-url')}
+                placeholder={t('enter-api-base-url')}
+                value={editingProvider.baseURL || ''}
+                onValueChange={(value) => {
+                  setEditingProvider((prev) => ({ ...prev, baseURL: value }));
+                }}
+              />
+
+              {!usesEnvApiKey && (
+                <Input
+                  label={t('api-key')}
+                  placeholder={t('enter-api-key')}
+                  type="password"
+                  value={editingProvider.apiKey || ''}
+                  onValueChange={(value) => {
+                    setEditingProvider((prev) => ({ ...prev, apiKey: value }));
+                  }}
+                  endContent={<Copy size={20} content={editingProvider.apiKey ?? ''} />}
+                />
+              )}
+            </CardBody>
+          </Card>
         )}
 
         {(editingProvider.provider === 'azure' || editingProvider.provider === 'azureopenai') && (
-          <Input
-            label={t('api-version')}
-            placeholder="Enter API version (e.g., 2024-02-01)"
-            value={editingProvider.config?.apiVersion || ''}
-            onValueChange={(value) => {
-              setEditingProvider(prev => ({
-                ...prev,
-                config: {
-                  ...prev.config,
-                  apiVersion: value
-                }
-              }));
-            }}
-          />
-        )}
-
-        {isOllama && (
           <Card shadow="none" className="bg-secondbackground">
             <CardBody className="space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex flex-col">
-                  <div className="font-medium">{t('ollama-integrated-server')}</div>
-                  <div className="text-xs text-default-500">
-                    {t('ollama-integrated-server-desc')}
+              <div className="flex items-center gap-2 text-sm font-medium text-default-700">
+                <Icon icon="hugeicons:settings-01" width="16" height="16" />
+                <span>{t('advanced')}</span>
+              </div>
+              <Input
+                label={t('api-version')}
+                placeholder="2024-02-01"
+                value={editingProvider.config?.apiVersion || ''}
+                onValueChange={(value) => {
+                  setEditingProvider((prev) => ({
+                    ...prev,
+                    config: {
+                      ...prev.config,
+                      apiVersion: value,
+                    },
+                  }));
+                }}
+              />
+            </CardBody>
+          </Card>
+        )}
+      </div>
+    );
+
+    const localOllamaPanel = (() => {
+      if (!isOllama) return null;
+
+      const rawEndpoint = (editingProvider.baseURL || '').trim() || 'http://127.0.0.1:11434';
+      const endpoint = rawEndpoint.replace(/[\s\u200B\uFEFF\u200E\u200F]+/g, '');
+      const status = ollamaInfo.status;
+      const running = !!status?.running;
+      const managedSupported = !!status?.managed_supported;
+
+      const installPercent = typeof ollamaInfo.installProgress?.percent === 'number'
+        ? Math.max(0, Math.min(100, ollamaInfo.installProgress!.percent!))
+        : null;
+      const pullPercent =
+        typeof ollamaInfo.pullProgress?.completed === 'number' && typeof ollamaInfo.pullProgress?.total === 'number' && ollamaInfo.pullProgress.total > 0
+          ? Math.max(0, Math.min(100, (ollamaInfo.pullProgress.completed / ollamaInfo.pullProgress.total) * 100))
+          : null;
+
+      return (
+        <div className="space-y-4">
+          <Card shadow="none" className="bg-secondbackground">
+            <CardBody className="space-y-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <div className="font-medium">{t('ollama-integrated-server')}</div>
+                    <Chip size="sm" color={running ? 'success' : 'default'} variant="flat">
+                      {running ? t('ollama-status-running') : t('ollama-status-stopped')}
+                    </Chip>
+                    {status?.managed_installed ? (
+                      <Chip size="sm" color="primary" variant="flat">
+                        {t('installed')}
+                      </Chip>
+                    ) : (
+                      <Chip size="sm" color="warning" variant="flat">
+                        {t('not-installed')}
+                      </Chip>
+                    )}
+                  </div>
+
+                  <div className="mt-1 flex items-center gap-2 text-xs text-default-500 min-w-0">
+                    <span className="truncate">
+                      {t('provider-effective-endpoint')}: <span className="font-mono">{endpoint}</span>
+                    </span>
+                    <Copy size={16} content={endpoint} />
+                  </div>
+
+                  <div className="mt-2 grid grid-cols-1 md:grid-cols-3 gap-2 text-xs text-default-600">
+                    <div className="rounded-md bg-default-50 border border-default-200 p-2">
+                      <div className="text-default-500">{t('server-version')}</div>
+                      <div className="font-mono">{status?.server_version ? `v${status.server_version}` : '-'}</div>
+                    </div>
+                    <div className="rounded-md bg-default-50 border border-default-200 p-2">
+                      <div className="text-default-500">{t('managed-version')}</div>
+                      <div className="font-mono">{status?.managed_version ? `v${status.managed_version}` : '-'}</div>
+                    </div>
+                    <div className="rounded-md bg-default-50 border border-default-200 p-2">
+                      <div className="text-default-500">{t('latest-version')}</div>
+                      <div className="font-mono">{status?.latest_version ? `v${status.latest_version}` : '-'}</div>
+                    </div>
                   </div>
                 </div>
-                <Button size="sm" variant="flat" isDisabled={!isInTauri()} onPress={refreshOllamaStatus}>
-                  {t('refresh')}
-                </Button>
+
+                <div className="flex flex-col items-end gap-2 shrink-0">
+                  <Button size="sm" variant="flat" isDisabled={!isInTauri() || ollamaInfo.busy} onPress={refreshOllamaStatus}>
+                    {t('refresh')}
+                  </Button>
+                  {!isInTauri() && (
+                    <div className="text-[11px] text-default-500 max-w-48 text-right">
+                      {t('ollama-managed-mode-desktop-only')}
+                    </div>
+                  )}
+                </div>
               </div>
 
-              <div className="flex flex-col gap-1 text-xs text-default-600">
-                <div>
-                  {t('status')}: {ollamaInfo.status?.running ? t('ollama-status-running') : t('ollama-status-stopped')}
-                  {ollamaInfo.status?.server_version ? ` (v${ollamaInfo.status.server_version})` : ''}
-                </div>
-                <div>
-                  {t('install')}: {ollamaInfo.status?.managed_installed ? t('installed') : t('not-installed')}
-                  {ollamaInfo.status?.managed_version ? ` (${ollamaInfo.status.managed_version})` : ''}
-                </div>
-                {ollamaInfo.status?.latest_version && (
-                  <div>
-                    {t('latest-version')}: {ollamaInfo.status.latest_version}
+              {status?.last_error && (
+                <div className="rounded-md border border-danger-200 bg-danger-50 p-3 text-xs text-danger-700">
+                  <div className="flex items-center gap-2 font-medium">
+                    <Icon icon="hugeicons:alert-02" width="14" height="14" />
+                    <span>{t('error')}</span>
                   </div>
-                )}
-                {ollamaInfo.status?.last_error && (
-                  <div className="text-danger">
-                    {t('error')}: {ollamaInfo.status.last_error}
-                  </div>
-                )}
-              </div>
+                  <div className="mt-1 font-mono whitespace-pre-wrap break-words">{status.last_error}</div>
+                </div>
+              )}
+
+              <Divider />
 
               <div className="flex flex-col gap-1">
                 <Switch
                   isSelected={!!ollamaManaged}
-                  isDisabled={!isInTauri() || (ollamaInfo.status ? !ollamaInfo.status.managed_supported : false)}
+                  isDisabled={!isInTauri() || (status ? !status.managed_supported : false)}
                   onValueChange={(value) => {
-                    setEditingProvider(prev => ({
+                    setEditingProvider((prev) => ({
                       ...prev,
                       config: {
                         ...(prev.config as any || {}),
-                        ollamaManaged: value
-                      }
+                        ollamaManaged: value,
+                      },
                     }));
                   }}
                 >
                   {t('ollama-managed-mode')}
                 </Switch>
-                <span className="text-xs text-default-500">
-                  {isInTauri()
-                    ? t('ollama-managed-mode-desc')
-                    : t('ollama-managed-mode-desktop-only')}
-                </span>
-                {ollamaInfo.status && !ollamaInfo.status.managed_supported && (
-                  <span className="text-xs text-danger">
+
+                <div className="text-xs text-default-500">
+                  {isInTauri() ? t('ollama-managed-mode-desc') : t('ollama-managed-mode-desktop-only')}
+                </div>
+
+                {status && !managedSupported && (
+                  <div className="text-xs text-danger">
                     {t('ollama-managed-not-supported')}
-                  </span>
+                  </div>
                 )}
               </div>
 
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  size="sm"
-                  variant="flat"
-                  isDisabled={!isInTauri() || ollamaInfo.busy || !ollamaManaged || !ollamaInfo.status?.managed_supported || !!ollamaInfo.status?.running}
-                  onPress={async () => {
-                    try {
-                      setOllamaInfo(prev => ({ ...prev, busy: true, installProgress: null }));
-                      const status = await ollamaInstallManaged();
-                      setOllamaInfo(prev => ({ ...prev, status }));
-                      await refreshOllamaStatus();
-                    } catch (e: any) {
-                      toast.error(e?.message || String(e));
-                    } finally {
-                      setOllamaInfo(prev => ({ ...prev, busy: false }));
-                    }
-                  }}
-                >
-                  {t('install')}
-                </Button>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                <Tooltip content={!ollamaManaged ? t('ollama-managed-required') : undefined}>
+                  <Button
+                    size="sm"
+                    variant="flat"
+                    isDisabled={!isInTauri() || ollamaInfo.busy || !ollamaManaged || !managedSupported || running}
+                    onPress={async () => {
+                      try {
+                        setOllamaInfo((prev) => ({ ...prev, busy: true, installProgress: null }));
+                        const s = await ollamaInstallManaged();
+                        setOllamaInfo((prev) => ({ ...prev, status: s }));
+                        await refreshOllamaStatus();
+                      } catch (e: any) {
+                        toast.error(e?.message || String(e));
+                      } finally {
+                        setOllamaInfo((prev) => ({ ...prev, busy: false }));
+                      }
+                    }}
+                  >
+                    {t('install')}
+                  </Button>
+                </Tooltip>
 
-                <Button
-                  size="sm"
-                  variant="flat"
-                  isDisabled={!isInTauri() || ollamaInfo.busy || !ollamaManaged || !ollamaInfo.status?.managed_supported || !!ollamaInfo.status?.running}
-                  onPress={async () => {
-                    try {
-                      setOllamaInfo(prev => ({ ...prev, busy: true, installProgress: null }));
-                      const status = await ollamaUpdateManaged();
-                      setOllamaInfo(prev => ({ ...prev, status }));
-                      await refreshOllamaStatus();
-                    } catch (e: any) {
-                      toast.error(e?.message || String(e));
-                    } finally {
-                      setOllamaInfo(prev => ({ ...prev, busy: false }));
-                    }
-                  }}
-                >
-                  {t('update')}
-                </Button>
+                <Tooltip content={!ollamaManaged ? t('ollama-managed-required') : undefined}>
+                  <Button
+                    size="sm"
+                    variant="flat"
+                    isDisabled={!isInTauri() || ollamaInfo.busy || !ollamaManaged || !managedSupported || running}
+                    onPress={async () => {
+                      try {
+                        setOllamaInfo((prev) => ({ ...prev, busy: true, installProgress: null }));
+                        const s = await ollamaUpdateManaged();
+                        setOllamaInfo((prev) => ({ ...prev, status: s }));
+                        await refreshOllamaStatus();
+                      } catch (e: any) {
+                        toast.error(e?.message || String(e));
+                      } finally {
+                        setOllamaInfo((prev) => ({ ...prev, busy: false }));
+                      }
+                    }}
+                  >
+                    {t('update')}
+                  </Button>
+                </Tooltip>
 
                 <Button
                   size="sm"
@@ -520,17 +740,16 @@ export default observer(function ProviderDialogContent({ provider }: ProviderDia
                   isDisabled={!isInTauri() || ollamaInfo.busy}
                   onPress={async () => {
                     try {
-                      const endpoint = (editingProvider.baseURL || '').trim() || 'http://127.0.0.1:11434';
-                      if (!editingProvider.baseURL) {
-                        setEditingProvider(prev => ({ ...prev, baseURL: endpoint }));
+                      if ((editingProvider.baseURL || '').trim() !== endpoint) {
+                        setEditingProvider((prev) => ({ ...prev, baseURL: endpoint }));
                       }
-                      setOllamaInfo(prev => ({ ...prev, busy: true }));
-                      const status = await ollamaStart(endpoint);
-                      setOllamaInfo(prev => ({ ...prev, status }));
+                      setOllamaInfo((prev) => ({ ...prev, busy: true }));
+                      const s = await ollamaStart(endpoint);
+                      setOllamaInfo((prev) => ({ ...prev, status: s }));
                     } catch (e: any) {
                       toast.error(e?.message || String(e));
                     } finally {
-                      setOllamaInfo(prev => ({ ...prev, busy: false }));
+                      setOllamaInfo((prev) => ({ ...prev, busy: false }));
                     }
                   }}
                 >
@@ -544,13 +763,13 @@ export default observer(function ProviderDialogContent({ provider }: ProviderDia
                   isDisabled={!isInTauri() || ollamaInfo.busy}
                   onPress={async () => {
                     try {
-                      setOllamaInfo(prev => ({ ...prev, busy: true }));
-                      const status = await ollamaStop();
-                      setOllamaInfo(prev => ({ ...prev, status }));
+                      setOllamaInfo((prev) => ({ ...prev, busy: true }));
+                      const s = await ollamaStop();
+                      setOllamaInfo((prev) => ({ ...prev, status: s }));
                     } catch (e: any) {
                       toast.error(e?.message || String(e));
                     } finally {
-                      setOllamaInfo(prev => ({ ...prev, busy: false }));
+                      setOllamaInfo((prev) => ({ ...prev, busy: false }));
                     }
                   }}
                 >
@@ -559,54 +778,69 @@ export default observer(function ProviderDialogContent({ provider }: ProviderDia
               </div>
 
               {ollamaInfo.installProgress && (
-                <div className="text-xs text-default-500">
-                  {t('progress')}: {ollamaInfo.installProgress.stage} - {ollamaInfo.installProgress.message}
-                  {typeof ollamaInfo.installProgress.percent === 'number' ? ` (${ollamaInfo.installProgress.percent}%)` : ''}
+                <div className="space-y-2">
+                  <div className="text-xs text-default-500">
+                    {t('progress')}: {ollamaInfo.installProgress.stage} - {ollamaInfo.installProgress.message}
+                  </div>
+                  <Progress
+                    size="sm"
+                    value={installPercent ?? undefined}
+                    isIndeterminate={installPercent == null}
+                    color="primary"
+                  />
                 </div>
               )}
 
-              <div className="flex flex-col gap-2">
+              <Divider />
+
+              <div className="space-y-3">
                 <div className="flex items-end gap-2">
                   <Input
                     label={t('ollama-model-to-pull')}
                     placeholder="llama3.2"
                     value={ollamaInfo.modelToPull}
-                    onValueChange={(value) => setOllamaInfo(prev => ({ ...prev, modelToPull: value }))}
+                    onValueChange={(value) => setOllamaInfo((prev) => ({ ...prev, modelToPull: value }))}
                   />
+
                   <Button
                     size="sm"
                     color="primary"
                     isDisabled={!isInTauri() || ollamaInfo.busy || !ollamaInfo.modelToPull.trim()}
                     onPress={async () => {
                       try {
-                        const endpoint = (editingProvider.baseURL || '').trim() || 'http://127.0.0.1:11434';
-                        setOllamaInfo(prev => ({ ...prev, busy: true, pullProgress: null }));
+                        if ((editingProvider.baseURL || '').trim() !== endpoint) {
+                          setEditingProvider((prev) => ({ ...prev, baseURL: endpoint }));
+                        }
+                        setOllamaInfo((prev) => ({ ...prev, busy: true, pullProgress: null }));
                         await ollamaPullModel(endpoint, ollamaInfo.modelToPull);
                         const models = await ollamaListModels(endpoint);
-                        setOllamaInfo(prev => ({ ...prev, models }));
+                        setOllamaInfo((prev) => ({ ...prev, models }));
                       } catch (e: any) {
                         toast.error(e?.message || String(e));
                       } finally {
-                        setOllamaInfo(prev => ({ ...prev, busy: false }));
+                        setOllamaInfo((prev) => ({ ...prev, busy: false }));
                       }
                     }}
                   >
                     {t('pull')}
                   </Button>
+
                   <Button
                     size="sm"
                     variant="flat"
                     isDisabled={!isInTauri() || ollamaInfo.busy}
                     onPress={async () => {
                       try {
-                        const endpoint = (editingProvider.baseURL || '').trim() || 'http://127.0.0.1:11434';
-                        setOllamaInfo(prev => ({ ...prev, busy: true }));
+                        if ((editingProvider.baseURL || '').trim() !== endpoint) {
+                          setEditingProvider((prev) => ({ ...prev, baseURL: endpoint }));
+                        }
+                        setOllamaInfo((prev) => ({ ...prev, busy: true }));
                         const models = await ollamaListModels(endpoint);
-                        setOllamaInfo(prev => ({ ...prev, models }));
+                        setOllamaInfo((prev) => ({ ...prev, models }));
                       } catch (e: any) {
                         toast.error(e?.message || String(e));
                       } finally {
-                        setOllamaInfo(prev => ({ ...prev, busy: false }));
+                        setOllamaInfo((prev) => ({ ...prev, busy: false }));
                       }
                     }}
                   >
@@ -615,67 +849,138 @@ export default observer(function ProviderDialogContent({ provider }: ProviderDia
                 </div>
 
                 {ollamaInfo.pullProgress && (
-                  <div className="text-xs text-default-500">
-                    {t('progress')}: {ollamaInfo.pullProgress.status || ''}{' '}
-                    {typeof ollamaInfo.pullProgress.completed === 'number' && typeof ollamaInfo.pullProgress.total === 'number'
-                      ? `(${ollamaInfo.pullProgress.completed}/${ollamaInfo.pullProgress.total})`
-                      : ''}
+                  <div className="space-y-2">
+                    <div className="text-xs text-default-500">
+                      {t('progress')}: {ollamaInfo.pullProgress.status || ''}
+                    </div>
+                    <Progress
+                      size="sm"
+                      value={pullPercent ?? undefined}
+                      isIndeterminate={pullPercent == null && !ollamaInfo.pullProgress.done}
+                      color="primary"
+                    />
                   </div>
                 )}
 
                 {ollamaInfo.models.length > 0 && (
                   <div className="space-y-2">
-                    <div className="text-xs text-default-500">{t('installed-models')}</div>
-                    <div className="flex flex-col gap-1">
-                      {ollamaInfo.models.slice(0, 10).map((m) => (
-                        <div key={m.name} className="flex items-center justify-between gap-2 text-xs">
-                          <div className="truncate">{m.name}</div>
-                          <Button
-                            size="sm"
-                            color="danger"
-                            variant="light"
-                            isDisabled={!isInTauri() || ollamaInfo.busy}
-                            onPress={async () => {
-                              try {
-                                const endpoint = (editingProvider.baseURL || '').trim() || 'http://127.0.0.1:11434';
-                                setOllamaInfo(prev => ({ ...prev, busy: true }));
-                                await ollamaDeleteModel(endpoint, m.name);
-                                const models = await ollamaListModels(endpoint);
-                                setOllamaInfo(prev => ({ ...prev, models }));
-                              } catch (e: any) {
-                                toast.error(e?.message || String(e));
-                              } finally {
-                                setOllamaInfo(prev => ({ ...prev, busy: false }));
-                              }
-                            }}
-                          >
-                            {t('delete')}
-                          </Button>
-                        </div>
-                      ))}
+                    <div className="text-xs text-default-500">
+                      {t('installed-models')} ({ollamaInfo.models.length})
                     </div>
-                    {ollamaInfo.models.length > 10 && (
-                      <div className="text-xs text-default-400">{t('showing-first-n', { n: 10 })}</div>
+                    <div className="max-h-56 overflow-auto rounded-md border border-default-200 bg-default-50">
+                      <div className="flex flex-col divide-y divide-default-200">
+                        {ollamaInfo.models.slice(0, 50).map((m) => (
+                          <div key={m.name} className="flex items-center justify-between gap-3 p-2 text-xs">
+                            <div className="min-w-0">
+                              <div className="font-mono truncate">{m.name}</div>
+                              <div className="text-[11px] text-default-500">
+                                {m.size ? `${Math.round(m.size / (1024 * 1024))}MB` : ''}
+                              </div>
+                            </div>
+                            <Button
+                              size="sm"
+                              color="danger"
+                              variant="light"
+                              isDisabled={!isInTauri() || ollamaInfo.busy}
+                              onPress={async () => {
+                                try {
+                                  setOllamaInfo((prev) => ({ ...prev, busy: true }));
+                                  await ollamaDeleteModel(endpoint, m.name);
+                                  const models = await ollamaListModels(endpoint);
+                                  setOllamaInfo((prev) => ({ ...prev, models }));
+                                } catch (e: any) {
+                                  toast.error(e?.message || String(e));
+                                } finally {
+                                  setOllamaInfo((prev) => ({ ...prev, busy: false }));
+                                }
+                              }}
+                            >
+                              {t('delete')}
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    {ollamaInfo.models.length > 50 && (
+                      <div className="text-xs text-default-400">{t('showing-first-n', { n: 50 })}</div>
                     )}
                   </div>
                 )}
 
-                {ollamaInfo.logs.length > 0 && (
-                  <div className="space-y-1">
-                    <div className="text-xs text-default-500">{t('logs')}</div>
-                    <div className="max-h-32 overflow-auto rounded-md bg-default-50 p-2 text-[11px] font-mono text-default-700">
-                      {ollamaInfo.logs.map((l, idx) => (
-                        <div key={idx} className="whitespace-pre-wrap break-words">
-                          {l}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
               </div>
+
+              <Divider />
+
+              <div className="flex items-center justify-between">
+                <div className="text-sm font-medium text-default-700">{t('logs')}</div>
+                <Button
+                  size="sm"
+                  variant="flat"
+                  isDisabled={!isInTauri()}
+                  onPress={() => setOllamaShowLogs((v) => !v)}
+                >
+                  {ollamaShowLogs ? t('hide') : t('show')}
+                </Button>
+              </div>
+
+              {ollamaShowLogs && (
+                <div className="max-h-48 overflow-auto rounded-md bg-default-50 border border-default-200 p-2 text-[11px] font-mono text-default-700">
+                  {ollamaInfo.logs.length === 0 ? (
+                    <div className="text-default-500">{t('no-data')}</div>
+                  ) : (
+                    ollamaInfo.logs.map((l, idx) => (
+                      <div key={idx} className="whitespace-pre-wrap break-words">
+                        {l}
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
             </CardBody>
           </Card>
-        )}
+        </div>
+      );
+    })();
+
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center justify-center gap-3 mb-4">
+          <ProviderIcon provider={selectedTemplate} className="w-8 h-8" />
+          <h3 className="text-lg font-semibold">
+            {selectedTemplate === 'custom' ? t('custom-configuration') : template?.label}
+          </h3>
+        </div>
+
+        <Tabs
+          aria-label="Provider configuration tabs"
+          selectedKey={providerConfigTab}
+          onSelectionChange={(key) => setProviderConfigTab(String(key) as any)}
+        >
+          <Tab
+            key="connection"
+            title={
+              <div className="flex items-center gap-2">
+                <Icon icon="hugeicons:link-04" width="16" height="16" />
+                <span>{t('provider-tab-connection')}</span>
+              </div>
+            }
+          >
+            {connectionPanel}
+          </Tab>
+          {isOllama && (
+            <Tab
+              key="local"
+              title={
+                <div className="flex items-center gap-2">
+                  <Icon icon="hugeicons:server-01" width="16" height="16" />
+                  <span>{t('provider-tab-local')}</span>
+                </div>
+              }
+            >
+              {localOllamaPanel}
+            </Tab>
+          )}
+        </Tabs>
       </div>
     );
   };

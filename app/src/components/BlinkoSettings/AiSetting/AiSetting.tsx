@@ -36,9 +36,12 @@ export default observer(function AiSetting() {
 
   return (
     <div className='flex flex-col gap-4'>
-      <CollapsibleCard icon="hugeicons:ai-magic" title="AI Providers & Models">
+      <CollapsibleCard icon="hugeicons:ai-magic" title="AI Providers & Models" decorations={false}>
         <div className="space-y-4">
           <div className="flex justify-between items-center">
+            <div className="text-sm text-default-600">
+              {t('ai-providers-desc')}
+            </div>
             <Button
               size='md'
               className='ml-auto'
@@ -57,9 +60,11 @@ export default observer(function AiSetting() {
             </Button>
           </div>
 
-          {aiStore.aiProviders.value?.map(provider => (
-            <ProviderCard key={provider.id} provider={provider as any} />
-          ))}
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+            {aiStore.aiProviders.value?.map(provider => (
+              <ProviderCard key={provider.id} provider={provider as any} />
+            ))}
+          </div>
         </div>
       </CollapsibleCard>
 
@@ -76,7 +81,7 @@ export default observer(function AiSetting() {
 
       <McpServersSection />
 
-      <CollapsibleCard icon="hugeicons:api" title="MCP Integration">
+      <CollapsibleCard icon="hugeicons:api" title="MCP Integration" decorations={false}>
         <div className="space-y-4">
           <div className="text-sm text-default-600 mb-4">
             {t('mcp-integration-desc', 'Model Context Protocol (MCP) integration allows AI assistants to connect to Blinko and use its tools.')}

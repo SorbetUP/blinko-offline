@@ -566,7 +566,7 @@ export const McpServersSection = observer(() => {
   };
 
   return (
-    <CollapsibleCard icon="simple-icons:mcp" title={t('mcp-client-servers')}>
+    <CollapsibleCard icon="simple-icons:mcp" title={t('mcp-client-servers')} decorations={false}>
       <div className="space-y-4">
         <div className="text-sm text-default-600 mb-4">
           {t('mcp-client-servers-desc', 'Configure external MCP servers that the AI can connect to and use their tools. These tools will be available during AI conversations.')}
@@ -613,4 +613,3 @@ export const McpServersSection = observer(() => {
     </CollapsibleCard>
   );
 });
-

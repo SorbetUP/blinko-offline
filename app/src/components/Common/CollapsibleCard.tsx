@@ -9,6 +9,7 @@ interface CollapsibleCardProps {
   children: ReactNode;
   className?: string;
   defaultCollapsed?: boolean;
+  decorations?: boolean;
 }
 
 const DECORATIVE_ICONS = [
@@ -57,13 +58,14 @@ export const CollapsibleCard = ({
   title,
   children,
   className = "",
-  defaultCollapsed = false
+  defaultCollapsed = false,
+  decorations = true,
 }: CollapsibleCardProps) => {
   const storageKey = `blinko-card-collapsed-${typeof title === 'string' ? title : ''}`;
 
   const [isCollapsed, setIsCollapsed] = useState(() => {
     const stored = localStorage.getItem(storageKey);
-    return stored ? JSON.parse(stored) : false;
+    return stored ? JSON.parse(stored) : defaultCollapsed;
   });
 
   const handleCollapse = (value: boolean) => {
@@ -73,16 +75,18 @@ export const CollapsibleCard = ({
 
   return (
     <Card shadow="none" className={`flex flex-col p-2 md:p-4 bg-background relative ${className}`}>
-      <div className="absolute inset-0 overflow-hidden opacity-[0.03] pointer-events-none">
-        <RandomIcon className="right-[10%] bottom-[20%]" />
-        <RandomIcon className="left-[15%] top-[25%]" />
-        <RandomIcon className="right-[30%] top-[15%]" />
-        <RandomIcon className="left-[25%] bottom-[30%]" />
-        <RandomIcon className="right-[45%] bottom-[15%]" />
-        <RandomIcon className="left-[40%] top-[40%]" />
-        <RandomIcon className="right-[20%] top-[35%]" />
-        <RandomIcon className="left-[35%] bottom-[25%]" />
-      </div>
+      {decorations && (
+        <div className="absolute inset-0 overflow-hidden opacity-[0.03] pointer-events-none">
+          <RandomIcon className="right-[10%] bottom-[20%]" />
+          <RandomIcon className="left-[15%] top-[25%]" />
+          <RandomIcon className="right-[30%] top-[15%]" />
+          <RandomIcon className="left-[25%] bottom-[30%]" />
+          <RandomIcon className="right-[45%] bottom-[15%]" />
+          <RandomIcon className="left-[40%] top-[40%]" />
+          <RandomIcon className="right-[20%] top-[35%]" />
+          <RandomIcon className="left-[35%] bottom-[25%]" />
+        </div>
+      )}
 
       <div className='flex items-center justify-between mb-2'>
         <div className="flex items-center gap-2">

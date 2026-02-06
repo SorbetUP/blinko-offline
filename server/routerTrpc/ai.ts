@@ -613,7 +613,11 @@ export const aiRouter = router({
       try {
         switch (provider.provider.toLowerCase()) {
           case 'ollama': {
-            const endpoint = provider.baseURL || 'http://127.0.0.1:11434';
+            const rawEndpoint = provider.baseURL || 'http://127.0.0.1:11434';
+            const endpoint = String(rawEndpoint)
+              .trim()
+              .replace(/[\s\u200B\uFEFF\u200E\u200F]+/g, '')
+              .replace(/\/+$/, '');
             const response = await proxiedFetch(`${endpoint}/api/tags`);
             const data = await response.json() as any;
             modelList = data.models?.map((model: any) => ({

@@ -35,7 +35,7 @@ export const DefaultModelsSection = observer(() => {
   }, []);
 
   return (
-    <CollapsibleCard icon="hugeicons:settings-02" title="Default Models Configuration">
+    <CollapsibleCard icon="hugeicons:settings-02" title="Default Models Configuration" decorations={false}>
       <div className="space-y-6">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* Main Chat Model */}

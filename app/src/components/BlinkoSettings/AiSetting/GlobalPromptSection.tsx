@@ -36,7 +36,7 @@ export const GlobalPromptSection = observer(() => {
   };
 
   return (
-    <CollapsibleCard icon="hugeicons:message-01" title="Global Prompt Configuration">
+    <CollapsibleCard icon="hugeicons:message-01" title="Global Prompt Configuration" decorations={false}>
       <div className="space-y-4">
         <div className="flex flex-col gap-2">
           <div className="font-medium">{t('global-prompt')}</div>

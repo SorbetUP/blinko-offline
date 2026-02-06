@@ -39,7 +39,7 @@ export const AiToolsSection = observer(() => {
   };
 
   return (
-    <CollapsibleCard icon="hugeicons:ai-chemistry-02" title={t('ai-tools')}>
+    <CollapsibleCard icon="hugeicons:ai-chemistry-02" title={t('ai-tools')} decorations={false}>
       <Item
         leftContent={<>{t('tavily-api-key')}</>}
         rightContent={

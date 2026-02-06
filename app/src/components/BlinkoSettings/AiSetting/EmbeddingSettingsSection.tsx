@@ -103,7 +103,7 @@ export const EmbeddingSettingsSection = observer(function EmbeddingSettingsSecti
 
 
   return (
-    <CollapsibleCard icon="mingcute:vector-line" title="Embedding Management">
+    <CollapsibleCard icon="mingcute:vector-line" title="Embedding Management" decorations={false}>
       <div className="space-y-4">
         <Item
           type={isPc ? 'row' : 'col'}
