@@ -134,10 +134,6 @@ export const noteRouter = router({
             },
             {
               accountId: Number(ctx.id),
-              title: { contains: searchText, mode: 'insensitive' }
-            },
-            {
-              accountId: Number(ctx.id),
               attachments: {
                 some: {
                   OR: [
@@ -150,10 +146,6 @@ export const noteRouter = router({
             {
               internalShares: { some: { accountId: Number(ctx.id) } },
               content: { contains: searchText, mode: 'insensitive' }
-            },
-            {
-              internalShares: { some: { accountId: Number(ctx.id) } },
-              title: { contains: searchText, mode: 'insensitive' }
             },
             {
               internalShares: { some: { accountId: Number(ctx.id) } },

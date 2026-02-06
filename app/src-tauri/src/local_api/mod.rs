@@ -30,7 +30,11 @@ pub struct LocalApiContext {
     pub token: String,
     pub device_id: String,
     pub vditor_root: Option<PathBuf>,
+    pub plugin_marketplace_url: String,
 }
+
+const DEFAULT_PLUGIN_MARKETPLACE_URL: &str =
+    "https://raw.githubusercontent.com/blinko-space/blinko-plugin-marketplace/main/index.json";
 
 pub async fn start_local_api(context: Arc<LocalApiContext>) -> Result<u16, String> {
     let app = router::build_router(context.clone());
@@ -91,6 +95,7 @@ pub fn build_context(
     _db: LocalDb,
     data_state: LocalDataState,
     vditor_root: Option<PathBuf>,
+    plugin_marketplace_url: Option<String>,
 ) -> Result<Arc<LocalApiContext>, String> {
     let token = config
         .local_api
@@ -107,6 +112,9 @@ pub fn build_context(
         token,
         device_id,
         vditor_root,
+        plugin_marketplace_url: plugin_marketplace_url
+            .filter(|v| !v.trim().is_empty())
+            .unwrap_or_else(|| DEFAULT_PLUGIN_MARKETPLACE_URL.to_string()),
     }))
 }
 

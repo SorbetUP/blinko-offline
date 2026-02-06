@@ -10,11 +10,13 @@ import { ShowBlinkoProgressDialog } from "../Common/ImportBlinkoProgress";
 import { ShowMarkdownProgressDialog } from "../Common/ImportMarkdownProgress";
 import { ShowGoogleKeepOptionsDialog } from "../Common/ImportGoogleKeepProgress";
 import { CollapsibleCard } from "../Common/CollapsibleCard";
+import { UserStore } from "@/store/user";
 
 
 export const ImportSetting = observer(() => {
   const isPc = useMediaQuery('(min-width: 768px)')
   const { t } = useTranslation()
+  const user = RootStore.Get(UserStore)
 
   return <CollapsibleCard
     icon="tabler:file-import"
@@ -32,21 +34,23 @@ export const ImportSetting = observer(() => {
         </UploadFileWrapper>
       </>} />
 
-    <Item
-      type={isPc ? 'row' : 'col'}
-      leftContent={<div className="flex flex-col  gap-2">
-        <div>{t('import-from-memos-memos_prod-db')}</div>
-        <div className="text-desc text-xs">{t('when-exporting-memos_prod-db-please-close-the-memos-container-to-avoid-partial-loss-of-data')}</div>
-      </div>}
-      rightContent={<div className="flex w-full ml-auto justify-end">
-        <UploadFileWrapper onUpload={async ({ filePath, fileName }) => {
-          if (!fileName.endsWith('.db')) {
-            return RootStore.Get(ToastPlugin).error('Not a Memos database file')
-          }
-          ShowMemosProgressDialog(filePath)
-        }}>
-        </UploadFileWrapper>
-      </div>} />
+    {user.isSuperAdmin && (
+      <Item
+        type={isPc ? 'row' : 'col'}
+        leftContent={<div className="flex flex-col  gap-2">
+          <div>{t('import-from-memos-memos_prod-db')}</div>
+          <div className="text-desc text-xs">{t('when-exporting-memos_prod-db-please-close-the-memos-container-to-avoid-partial-loss-of-data')}</div>
+        </div>}
+        rightContent={<div className="flex w-full ml-auto justify-end">
+          <UploadFileWrapper onUpload={async ({ filePath, fileName }) => {
+            if (!fileName.endsWith('.db')) {
+              return RootStore.Get(ToastPlugin).error('Not a Memos database file')
+            }
+            ShowMemosProgressDialog(filePath)
+          }}>
+          </UploadFileWrapper>
+        </div>} />
+    )}
 
     <Item
       type={isPc ? 'row' : 'col'}

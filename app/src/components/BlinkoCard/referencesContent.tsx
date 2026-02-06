@@ -8,6 +8,7 @@ import { Icon } from '@/components/Common/Iconify/icons'
 import { cn } from "@heroui/theme"
 import { Tooltip } from "@heroui/react"
 import { useTranslation } from "react-i18next"
+import { isCredentialsContent, maskCredentialsContent } from "@/lib/notePrivacy"
 
 export const ReferencesContent = ({ blinkoItem, className }: { blinkoItem: BlinkoItem, className?: string }) => {
   const { t } = useTranslation()
@@ -31,7 +32,12 @@ export const ReferencesContent = ({ blinkoItem, className }: { blinkoItem: Blink
             <Icon icon="iconamoon:arrow-top-right-1" className='text-primary ml-auto' width="16" height="16" />
           </Tooltip>
         </div>
-        <div className='text-default-700 text-xs font-bold ml-1 select-none line-clamp-3 '>{item.toNote?.content}</div>
+        <div className='text-default-700 text-xs font-bold ml-1 select-none line-clamp-3 '>
+          {(() => {
+            const content = item.toNote?.content ?? ''
+            return isCredentialsContent(content) ? maskCredentialsContent(content) : content
+          })()}
+        </div>
       </div>
     })}
 
@@ -54,7 +60,12 @@ export const ReferencesContent = ({ blinkoItem, className }: { blinkoItem: Blink
           </Tooltip>
 
         </div>
-        <div className='text-default-700 text-xs font-bold ml-1 select-none line-clamp-3 '>{item.fromNote?.content}</div>
+        <div className='text-default-700 text-xs font-bold ml-1 select-none line-clamp-3 '>
+          {(() => {
+            const content = item.fromNote?.content ?? ''
+            return isCredentialsContent(content) ? maskCredentialsContent(content) : content
+          })()}
+        </div>
       </div>
     })}
   </div>

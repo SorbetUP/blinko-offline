@@ -114,7 +114,7 @@ export const allSettings: SettingItem[] = [
     title: ('import'),
     icon: 'tabler:file-import',
     component: <ImportSetting />,
-    requireAdmin: true,
+    requireAdmin: false,
     keywords: ['import', 'data', '导入', '数据导入'],
   },
   {

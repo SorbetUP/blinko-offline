@@ -44,6 +44,7 @@ pub struct LocalConfig {
     pub mode: LocalMode,
     pub device_id: Option<String>,
     pub remote_endpoints: Vec<RemoteEndpoint>,
+    pub allow_insecure_http: bool,
     pub local_api: LocalApiConfig,
 }
 
@@ -54,6 +55,7 @@ impl Default for LocalConfig {
             mode: LocalMode::Local,
             device_id: None,
             remote_endpoints: Vec::new(),
+            allow_insecure_http: false,
             local_api: LocalApiConfig::default(),
         }
     }

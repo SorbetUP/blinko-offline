@@ -46,6 +46,7 @@ pub fn build_router(state: Arc<LocalApiContext>) -> Router {
             "/sync/settings",
             get(handlers_sync::get_sync_settings).put(handlers_sync::update_sync_settings),
         )
+        .route("/sync/test", post(handlers_sync::test_sync_connection))
         .route("/sync/now", post(handlers_sync::sync_now))
         .route("/api/file/upload", post(handlers_files::upload_file))
         .route("/api/file/upload-by-url", post(handlers_files::upload_by_url))

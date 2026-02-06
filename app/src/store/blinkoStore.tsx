@@ -595,10 +595,6 @@ export class BlinkoStore implements Store {
     const location = useLocation();
     useEffect(() => {
       const tagId = searchParams.get('tagId');
-      if (tagId && Number(tagId) === this.noteListFilterConfig.tagId) {
-        return;
-      }
-      
       const withoutTag = searchParams.get('withoutTag');
       const withFile = searchParams.get('withFile');
       const withLink = searchParams.get('withLink');
@@ -623,6 +619,24 @@ export class BlinkoStore implements Store {
       this.curMultiSelectIds = [];
       this.isMultiSelectMode = false;
 
+      // Apply query filters BEFORE resetting lists, otherwise the list request runs with defaults.
+      if (tagId) {
+        this.noteListFilterConfig.tagId = Number(tagId) as number
+      }
+      if (withoutTag) {
+        this.noteListFilterConfig.withoutTag = true
+      }
+      if (withLink) {
+        this.noteListFilterConfig.withLink = true
+      }
+      if (withFile) {
+        this.noteListFilterConfig.withFile = true
+      }
+      if (hasTodo) {
+        this.noteListFilterConfig.hasTodo = true
+      }
+      this.searchText = searchText ? (searchText as string) : '';
+
       if (path == 'notes') {
         this.noteListFilterConfig.type = NoteType.NOTE
         this.noteOnlyList.resetAndCall({});
@@ -642,27 +656,6 @@ export class BlinkoStore implements Store {
         this.trashList.resetAndCall({});
       } else {
         this.blinkoList.resetAndCall({});
-      }
-
-      if (tagId) {
-        this.noteListFilterConfig.tagId = Number(tagId) as number
-      }
-      if (withoutTag) {
-        this.noteListFilterConfig.withoutTag = true
-      }
-      if (withLink) {
-        this.noteListFilterConfig.withLink = true
-      }
-      if (withFile) {
-        this.noteListFilterConfig.withFile = true
-      }
-      if (hasTodo) {
-        this.noteListFilterConfig.hasTodo = true
-      }
-      if (searchText) {
-        this.searchText = searchText as string;
-      } else {
-        this.searchText = '';
       }
     }, [this.forceQuery, location.pathname, searchParams])
   }

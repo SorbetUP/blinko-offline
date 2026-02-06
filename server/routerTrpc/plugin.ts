@@ -99,13 +99,25 @@ const cleanPluginDir = async (pluginName: string) => {
 };
 
 export const pluginRouter = router({
-  getAllPlugins: authProcedure
+  getAllPlugins: publicProcedure
+    .output(z.array(pluginInfoSchema))
     .query(async () => {
       return cache.wrap(
         `plugin-list-${await getHttpCacheKey()}`,
         async () => {
           try {
             const response = await getWithProxy('https://raw.githubusercontent.com/blinko-space/blinko-plugin-marketplace/main/index.json');
+
+            if ('error' in response && response.error) {
+              console.error('Failed to fetch plugin list:', response.message || 'Invalid response');
+              return [];
+            }
+
+            if (!Array.isArray(response.data)) {
+              console.error('Failed to fetch plugin list: Response was not an array');
+              return [];
+            }
+
             return response.data;
           } catch (error) {
             console.error('Failed to fetch plugin list:', error);

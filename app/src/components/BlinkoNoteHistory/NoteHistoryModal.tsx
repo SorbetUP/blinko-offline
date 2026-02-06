@@ -13,6 +13,7 @@ import { ScrollArea } from '../Common/ScrollArea';
 import { BlinkoStore } from '@/store/blinkoStore';
 import { DialogStore } from '@/store/module/Dialog';
 import { LoadingAndEmpty } from '../Common/LoadingAndEmpty';
+import { isCredentialsContent, maskCredentialsContent } from '@/lib/notePrivacy';
 
 interface HistoryItem {
   id: number;
@@ -174,7 +175,10 @@ const NoteHistoryModal = observer(({ noteId }: NoteHistoryModalProps) => {
           </div>
 
           <ScrollArea className="flex-1 w-full p-4 max-h-[400px]" onBottom={() => {}}>
-            <MarkdownRender content={Store.currentHistory?.content || ''} />
+            {(() => {
+              const content = Store.currentHistory?.content || '';
+              return <MarkdownRender content={isCredentialsContent(content) ? maskCredentialsContent(content) : content} />
+            })()}
           </ScrollArea>
 
           <div className="flex justify-end mt-4">

@@ -24,6 +24,7 @@ import { FilesAttachmentRender } from '@/components/Common/AttachmentRender';
 import { DialogStandaloneStore } from '@/store/module/DialogStandalone';
 import { BlinkoCard } from '@/components/BlinkoCard';
 import { ScrollArea } from '@/components/Common/ScrollArea';
+import { isCredentialsNote, maskCredentialsContent } from '@/lib/notePrivacy';
 const App = observer(() => {
   const blinko = RootStore.Get(BlinkoStore)
   const swiperRef = useRef(null);
@@ -136,10 +137,23 @@ const App = observer(() => {
                           </div>
                       }
                     </div>
-                    <MarkdownRender content={i.content} onChange={(newContent) => {
-                      i.content = newContent
-                      blinko.upsertNote.call({ id: i.id, content: newContent, refresh: false })
-                    }} />
+                    {(() => {
+                      const shouldMask = isCredentialsNote(i);
+                      const content = shouldMask ? maskCredentialsContent(i.content ?? '') : (i.content ?? '');
+                      return (
+                        <MarkdownRender
+                          content={content}
+                          onChange={
+                            shouldMask
+                              ? undefined
+                              : (newContent) => {
+                                  i.content = newContent
+                                  blinko.upsertNote.call({ id: i.id, content: newContent, refresh: false })
+                                }
+                          }
+                        />
+                      );
+                    })()}
                     <div className={i.attachments?.length != 0 ? 'my-2' : ''}>
                       <FilesAttachmentRender columns={2} files={i.attachments ?? []} preview />
                     </div>

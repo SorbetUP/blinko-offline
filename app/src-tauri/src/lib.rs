@@ -136,6 +136,7 @@ pub fn run() {
                     db.clone(),
                     data_state.clone(),
                     vditor_root,
+                    None,
                 ).ok();
                 let handle = app.handle().clone();
 
@@ -230,6 +231,7 @@ pub fn run() {
                     db.clone(),
                     data_state.clone(),
                     vditor_root,
+                    None,
                 ).ok();
                 let handle = app.handle().clone();
 

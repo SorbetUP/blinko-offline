@@ -6,7 +6,9 @@ use axum::http::{HeaderMap, Method, StatusCode};
 use axum::response::{IntoResponse, Response};
 use bytes::Bytes;
 use chrono::Utc;
+use reqwest::Client;
 use serde_json::{json, Value};
+use std::time::Duration;
 
 use crate::local_db::attachments::AttachmentRepository;
 use crate::local_db::notes::{Note, NoteInput, NoteRepository};
@@ -184,7 +186,7 @@ async fn dispatch_trpc(
         return handle_list_or_empty(path);
     }
     if let Some(path) = proc_path.strip_prefix("plugin.") {
-        return handle_plugin(path);
+        return handle_plugin(state, path).await;
     }
     if let Some(path) = proc_path.strip_prefix("follows.") {
         return handle_list_or_empty(path);
@@ -216,6 +218,7 @@ async fn handle_notes(
             let is_recycle_filter = input_obj.get("isRecycle").and_then(as_bool).unwrap_or(false);
             let is_archived_filter = input_obj.get("isArchived").and_then(as_bool);
             let note_type_filter = input_obj.get("type").and_then(as_i64);
+            let tag_id_filter = input_obj.get("tagId").and_then(as_i64);
             let search_text = input_obj
                 .get("searchText")
                 .and_then(|v| v.as_str())
@@ -254,6 +257,12 @@ async fn handle_notes(
                         || note.content.to_lowercase().contains(search_text)
                         || attachment_note_ids.contains(&note.id)
                 });
+            }
+            if let Some(tag_id) = tag_id_filter {
+                // Mirror the cloud backend behavior: when tagId is provided, only return notes linked to that tag.
+                let note_ids = tag_repo.list_note_ids_for_tag(tag_id).await?;
+                let allowed: HashSet<i64> = note_ids.into_iter().collect();
+                notes.retain(|note| allowed.contains(&note.id));
             }
 
             let start = ((page - 1) * size) as usize;
@@ -867,12 +876,67 @@ fn handle_ai(path: &str) -> Result<Value, String> {
     }
 }
 
-fn handle_plugin(path: &str) -> Result<Value, String> {
+async fn handle_plugin(state: &LocalApiContext, path: &str) -> Result<Value, String> {
     match path {
-        "getAllPlugins" | "getInstalledPlugins" => Ok(Value::Array(vec![])),
+        "getAllPlugins" => Ok(fetch_plugin_marketplace(&state.plugin_marketplace_url).await),
+        // Not yet supported in local mode; return empty list for UI compatibility.
+        "getInstalledPlugins" => Ok(Value::Array(vec![])),
         "getPluginCssContents" => Ok(Value::String("".to_string())),
-        "installPlugin" | "uninstallPlugin" | "saveAdditionalDevFile" | "saveDevPlugin" => Ok(json!({ "ok": true })),
+        "installPlugin" | "uninstallPlugin" | "saveAdditionalDevFile" | "saveDevPlugin" => {
+            Ok(json!({ "ok": true }))
+        }
         _ => Ok(default_response(path)),
+    }
+}
+
+async fn fetch_plugin_marketplace(url: &str) -> Value {
+    let client = match Client::builder()
+        .timeout(Duration::from_secs(15))
+        .user_agent("blinko-local-api")
+        .build()
+    {
+        Ok(client) => client,
+        Err(err) => {
+            eprintln!("Failed to build HTTP client for plugin marketplace: {err}");
+            return Value::Array(vec![]);
+        }
+    };
+
+    let resp = match client.get(url).send().await {
+        Ok(resp) => resp,
+        Err(err) => {
+            eprintln!("Failed to fetch plugin marketplace {url}: {err}");
+            return Value::Array(vec![]);
+        }
+    };
+
+    if !resp.status().is_success() {
+        eprintln!(
+            "Plugin marketplace returned non-success status {} for {}",
+            resp.status(),
+            url
+        );
+        return Value::Array(vec![]);
+    }
+
+    let bytes = match resp.bytes().await {
+        Ok(bytes) => bytes,
+        Err(err) => {
+            eprintln!("Failed to read plugin marketplace body from {url}: {err}");
+            return Value::Array(vec![]);
+        }
+    };
+
+    match serde_json::from_slice::<Value>(&bytes) {
+        Ok(Value::Array(items)) => Value::Array(items),
+        Ok(_) => {
+            eprintln!("Plugin marketplace payload was not a JSON array: {url}");
+            Value::Array(vec![])
+        }
+        Err(err) => {
+            eprintln!("Failed to parse plugin marketplace JSON from {url}: {err}");
+            Value::Array(vec![])
+        }
     }
 }
 

@@ -5,6 +5,7 @@ import { RootStore } from '@/store/root';
 import { useNavigate } from 'react-router-dom';
 import { BlinkoStore } from '@/store/blinkoStore';
 import { useEffect, useRef, useState, useMemo } from 'react';
+import { isCredentialsNote } from '@/lib/notePrivacy';
 
 interface BlogContentProps {
   blinkoItem: Note & {
@@ -31,6 +32,7 @@ export const CardBlogBox = ({ blinkoItem, isExpanded }: BlogContentProps) => {
   const navigate = useNavigate();
   const contentRef = useRef<HTMLDivElement>(null);
   const [contentHeight, setContentHeight] = useState<number>(112);
+  const shouldMask = isCredentialsNote(blinkoItem);
 
   useEffect(() => {
     const updateHeight = () => {
@@ -66,7 +68,7 @@ export const CardBlogBox = ({ blinkoItem, isExpanded }: BlogContentProps) => {
         </div>
         <div className={`text-desc flex-1 ${isExpanded ? 'text-sm' : 'text-sm'} line-clamp-4`}
         >
-          {blinkoItem.content?.replace(blinkoItem.title ?? '', '').replace(/#/g, '').replace(/\*/g, '')}
+          {shouldMask ? '' : blinkoItem.content?.replace(blinkoItem.title ?? '', '').replace(/#/g, '').replace(/\*/g, '')}
         </div>
         {
           !!blinkoItem?.tags?.length && blinkoItem?.tags?.length > 0 && (

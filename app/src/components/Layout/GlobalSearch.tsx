@@ -20,6 +20,7 @@ import { useLocation, useSearchParams, useNavigate } from 'react-router-dom';
 import { getBlinkoEndpoint } from '@/lib/blinkoEndpoint';
 import { downloadFromLink } from '@/lib/tauriHelper';
 import { api } from '@/lib/trpc';
+import { isCredentialsNote, maskCredentialsContent } from '@/lib/notePrivacy';
 
 interface GlobalSearchProps {
   isOpen: boolean;
@@ -287,7 +288,11 @@ export const GlobalSearch = observer(({ isOpen, onOpenChange }: GlobalSearchProp
         className="text-xs truncate w-full md:w-[80%] cursor-pointer"
         onClick={() => navigateToNote(note)}
       >
-        <HighlightText text={note?.content?.substring(0, 60) || t('no-content')} searchTerm={store.searchQuery} />
+        {(() => {
+          const shouldMask = isCredentialsNote(note);
+          const text = shouldMask ? maskCredentialsContent(note.content ?? '') : (note.content ?? '');
+          return <HighlightText text={text.substring(0, 60) || t('no-content')} searchTerm={store.searchQuery} />
+        })()}
       </div>
       <div className="ml-auto hidden md:block" onClick={(e) => e.stopPropagation()}>
         <ConvertTypeButton
