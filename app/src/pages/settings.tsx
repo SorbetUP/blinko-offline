@@ -27,6 +27,7 @@ import { HotkeySetting } from '@/components/BlinkoSettings/HotkeySetting';
 import { isDesktop, isInTauri } from '@/lib/tauriHelper';
 import { SyncSetting } from '@/components/BlinkoSettings/SyncSetting';
 import { useSearchParams } from 'react-router-dom';
+import { TrashSetting } from '@/components/BlinkoSettings/TrashSetting';
 
 type SettingItem = {
   key: string;
@@ -45,6 +46,14 @@ export const allSettings: SettingItem[] = [
     component: <BasicSetting />,
     requireAdmin: false,
     keywords: ['basic', 'information', '基本信息', '基础设置'],
+  },
+  {
+    key: 'trash',
+    title: ('trash'),
+    icon: 'hugeicons:delete-02',
+    component: <TrashSetting />,
+    requireAdmin: false,
+    keywords: ['trash', 'recycle', 'bin', 'poubelle', 'recycle bin', '回收站', '垃圾桶'],
   },
   {
     key: 'prefer',

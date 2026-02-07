@@ -804,6 +804,8 @@
   "translation-languages": "langue de traduction",
   "transport-type": "Transport Type",
   "trash": "Poubelle",
+  "trash-setting-desc": "Ouvrez la poubelle pour restaurer ou supprimer definitivement des elements.",
+  "open-trash": "Ouvrir la poubelle",
   "trigger-modifier": "Modifier le raccourci clavier",
   "tue": "Mardi",
   "two-factor-authentication": "Authentification à deux facteurs",
