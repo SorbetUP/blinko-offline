@@ -457,6 +457,7 @@
   "login-failed": "Échec de connexion",
   "login-type": "Type de connexion",
   "logout": "Déconnexion",
+  "quick-actions": "Actions rapides",
   "low-permission-token-desc": "Les jetons à faibles permissions ne peuvent accéder qu'au point de terminaison upsertNote et au point de terminaison du chat IA. Ils ne peuvent pas accéder à vos informations de compte ou à d'autres notes. Ceci est idéal pour des cas d'utilisation tels que les bots Telegram ou les bots WeChat, où vous souhaitez garantir qu'ils ne peuvent pas accéder à d'autres notes.",
   "maintenance": "Maintenance",
   "mark-all-as-read": "Marquer tout comme lu",
@@ -928,6 +929,11 @@
   "auth-codex-cli-desc": "Utiliser Codex CLI sur cette machine (desktop/serveur).",
   "auth-claude-code-cli-desc": "Utiliser Claude Code CLI sur cette machine (desktop/serveur).",
   "ollama-managed-required": "Activez le mode gere pour installer/mettre a jour le serveur integre.",
+  "ollama-local-server": "Serveur local Ollama",
+  "ollama-local-server-hint": "C’est l’endpoint sur lequel votre serveur Ollama ecoute (par defaut 127.0.0.1:11434).",
+  "auto-detect": "Auto-detect",
+  "use-detected": "Utiliser detecte",
+  "not-found": "Introuvable",
   "show": "Afficher",
   "hide": "Masquer"
 }

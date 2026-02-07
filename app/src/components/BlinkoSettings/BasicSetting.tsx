@@ -24,9 +24,11 @@ import { UploadFileWrapper } from "../Common/UploadFile";
 import Avatar from "boring-avatars";
 import { signOut } from "../Auth/auth-client";
 import { getBlinkoEndpoint } from "@/lib/blinkoEndpoint";
+import { useNavigate } from "react-router-dom";
 
 export const BasicSetting = observer(() => {
   const user = RootStore.Get(UserStore)
+  const nav = useNavigate();
   const CODE = `curl -X 'POST' '${getBlinkoEndpoint() ?? window.location.origin}api/v1/note/upsert' \\\n      -H 'Content-Type: application/json' \\\n      -H 'Authorization: Bearer ${user.userInfo.value?.token}' \\\n      -d '{ "content": "🎉Hello,Blinko! --send from api ", "type":0 }'\n`
   const CODE_SNIPPET = `\`\`\`javascript\n //blinko api document:${getBlinkoEndpoint() ?? window.location.origin}/api-doc\n ${CODE} \`\`\``
   const { t } = useTranslation()
@@ -161,6 +163,44 @@ export const BasicSetting = observer(() => {
                   })
                 }} />
             }
+          </div>
+        }
+      />
+
+      <Item
+        leftContent={<>{t('quick-actions')}</>}
+        rightContent={
+          <div className="flex flex-wrap gap-2 justify-end">
+            {user.isSuperAdmin && (
+              <Button
+                size="sm"
+                variant="flat"
+                startContent={<Icon icon="hugeicons:plug-socket" width="18" height="18" />}
+                onPress={() => nav('/settings?section=plugin')}
+              >
+                {t('plugin-settings')}
+              </Button>
+            )}
+            <Button
+              size="sm"
+              variant="flat"
+              startContent={<Icon icon="hugeicons:delete-02" width="18" height="18" />}
+              onPress={() => nav('/?path=trash')}
+            >
+              {t('trash')}
+            </Button>
+            <Button
+              size="sm"
+              color="danger"
+              variant="flat"
+              startContent={<Icon icon="hugeicons:logout-05" width="18" height="18" />}
+              onPress={async () => {
+                await signOut({ callbackUrl: '/signin' })
+                eventBus.emit('user:signout')
+              }}
+            >
+              {t('logout')}
+            </Button>
           </div>
         }
       />
@@ -364,17 +404,6 @@ export const BasicSetting = observer(() => {
           </div>
         }
       />
-
-      <Item
-        leftContent={<></>}
-        rightContent={
-          <Tooltip placement="bottom" content={t('logout')}>
-            <Button isIconOnly startContent={<Icon icon="hugeicons:logout-05" width="20" height="20" />} color='danger' onPress={async () => {
-              await signOut({ callbackUrl: '/signin' })
-              eventBus.emit('user:signout')
-            }}></Button>
-          </Tooltip>
-        } />
     </CollapsibleCard>
   );
 })

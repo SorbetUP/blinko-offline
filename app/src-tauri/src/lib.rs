@@ -98,7 +98,8 @@ pub fn run() {
                 ollama_stop,
                 ollama_list_models,
                 ollama_pull_model,
-                ollama_delete_model
+                ollama_delete_model,
+                detect_ai_cli_binaries
             ])
             .setup(|app| {
                 let runtime_info = match local_runtime::init_local_runtime(&app.handle()) {

@@ -26,6 +26,7 @@ import { Icon } from '@/components/Common/Iconify/icons';
 import { HotkeySetting } from '@/components/BlinkoSettings/HotkeySetting';
 import { isDesktop, isInTauri } from '@/lib/tauriHelper';
 import { SyncSetting } from '@/components/BlinkoSettings/SyncSetting';
+import { useSearchParams } from 'react-router-dom';
 
 type SettingItem = {
   key: string;
@@ -165,6 +166,7 @@ const Page = observer(() => {
   const { t } = useTranslation();
   const [selected, setSelected] = useState<string>('basic');
   const isMobile = useMediaQuery('(max-width: 768px)');
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const getVisibleSettings = () => {
     let settings = allSettings.filter((setting) => !setting.requireAdmin || user.isSuperAdmin);
@@ -206,9 +208,25 @@ const Page = observer(() => {
     icon: setting.icon,
   }));
 
+  useEffect(() => {
+    const section = searchParams.get('section');
+    if (!section) return;
+    const visible = getVisibleSettings().some((s) => s.key === section);
+    if (!visible) return;
+    setSelected(section);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
+  const selectSetting = (key: string) => {
+    setSelected(key);
+    const next = new URLSearchParams(searchParams);
+    next.set('section', key);
+    setSearchParams(next, { replace: true });
+  };
+
   return (
     <div className="h-full flex flex-col">
-      <ImportAIDialog onSelectTab={setSelected} />
+      <ImportAIDialog onSelectTab={selectSetting} />
 
       {isMobile ? (
         <div className="w-full">
@@ -218,7 +236,7 @@ const Page = observer(() => {
               <ScrollableTabs
                 items={tabItems}
                 selectedKey={selected}
-                onSelectionChange={setSelected}
+                onSelectionChange={selectSetting}
                 color="primary"
               />
             </div>
@@ -238,7 +256,7 @@ const Page = observer(() => {
                   {tabItems.map((item) => (
                     <button
                       key={item.key}
-                      onClick={() => setSelected(item.key)}
+                      onClick={() => selectSetting(item.key)}
                       className={`cursor-pointer flex items-center px-3 py-2 rounded-lg text-sm transition-colors ${selected === item.key
                         ? 'bg-primary text-primary-foreground font-medium'
                         : 'hover:bg-muted/50 text-foreground/80 hover:text-foreground'

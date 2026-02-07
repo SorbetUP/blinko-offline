@@ -21,6 +21,7 @@ import { AiSettingStore } from '@/store/aiSettingStore';
 import { Copy } from '../../Common/Copy';
 import { MarkdownRender } from '../../Common/MarkdownRender';
 import { getBlinkoEndpoint } from '@/lib/blinkoEndpoint';
+import { OllamaLocalServerSection } from './OllamaLocalServerSection';
 
 
 export default observer(function AiSetting() {
@@ -67,6 +68,8 @@ export default observer(function AiSetting() {
           </div>
         </div>
       </CollapsibleCard>
+
+      <OllamaLocalServerSection />
 
       <DefaultModelsSection />
 

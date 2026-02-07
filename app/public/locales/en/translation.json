@@ -55,6 +55,7 @@
   "user-custom-azureopenai-api-version": "API version",
   "ai-model": "AI Model",
   "logout": "Logout",
+  "quick-actions": "Quick actions",
   "user-or-password-error": "User or password error",
   "username": "Username",
   "enter-your-name": "Enter your name",
@@ -914,6 +915,11 @@
   "auth-codex-cli-desc": "Use Codex CLI on this machine (desktop/server).",
   "auth-claude-code-cli-desc": "Use Claude Code CLI on this machine (desktop/server).",
   "ollama-managed-required": "Enable managed mode to install/update the integrated server.",
+  "ollama-local-server": "Ollama local server",
+  "ollama-local-server-hint": "This is the endpoint your Ollama server listens on (default 127.0.0.1:11434).",
+  "auto-detect": "Auto-detect",
+  "use-detected": "Use detected",
+  "not-found": "Not found",
   "show": "Show",
   "hide": "Hide"
 }
