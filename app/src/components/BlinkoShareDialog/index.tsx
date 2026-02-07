@@ -245,7 +245,7 @@ export const BlinkoShareDialog = observer(({ defaultSettings }: ShareDialogProps
             className={`py-2 px-4 font-medium text-sm flex items-center gap-2 rounded-lg transition-colors`}
             onPress={() => store.setSelectedTab("public")}
           >
-            <Icon icon="mdi:public" width="20" height="20" />
+            <Icon icon="hugeicons:global" width="20" height="20" />
             {t("public-share")}
           </Button>
           <Button

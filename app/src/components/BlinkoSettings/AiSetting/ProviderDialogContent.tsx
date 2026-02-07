@@ -330,7 +330,7 @@ export default observer(function ProviderDialogContent({ provider }: ProviderDia
                     <CardBody className="p-3">
                       <div className="flex items-start gap-3">
                         <div className={`mt-0.5 ${authMode === 'env' ? 'text-primary' : 'text-default-500'}`}>
-                          <Icon icon="hugeicons:code-01" width="18" height="18" />
+                          <Icon icon="hugeicons:code" width="18" height="18" />
                         </div>
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2">
@@ -357,7 +357,7 @@ export default observer(function ProviderDialogContent({ provider }: ProviderDia
                       <CardBody className="p-3">
                         <div className="flex items-start gap-3">
                           <div className={`mt-0.5 ${authMode === 'codex-cli' ? 'text-primary' : 'text-default-500'}`}>
-                            <Icon icon="hugeicons:terminal-01" width="18" height="18" />
+                            <Icon icon="hugeicons:console" width="18" height="18" />
                           </div>
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-2">
@@ -385,7 +385,7 @@ export default observer(function ProviderDialogContent({ provider }: ProviderDia
                       <CardBody className="p-3">
                         <div className="flex items-start gap-3">
                           <div className={`mt-0.5 ${authMode === 'claude-code-cli' ? 'text-primary' : 'text-default-500'}`}>
-                            <Icon icon="hugeicons:terminal-01" width="18" height="18" />
+                            <Icon icon="hugeicons:console" width="18" height="18" />
                           </div>
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-2">
@@ -430,7 +430,7 @@ export default observer(function ProviderDialogContent({ provider }: ProviderDia
                     <Divider />
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-2 text-sm font-medium text-default-700">
-                        <Icon icon="hugeicons:terminal-02" width="16" height="16" />
+                        <Icon icon="hugeicons:console" width="16" height="16" />
                         <span>{t('cli-setup')}</span>
                         <Chip size="sm" color="warning" variant="flat">
                           {t('experimental')}

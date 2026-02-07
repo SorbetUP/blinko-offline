@@ -136,7 +136,7 @@ export const OllamaLocalServerSection = observer(function OllamaLocalServerSecti
       : null;
 
   return (
-    <CollapsibleCard icon="hugeicons:server-01" title={t('ollama-local-server')} decorations={false} defaultCollapsed={true}>
+    <CollapsibleCard icon="hugeicons:database-01" title={t('ollama-local-server')} decorations={false} defaultCollapsed={true}>
       <div className="space-y-4">
         {!inTauri && (
           <div className="rounded-md border border-default-200 bg-default-50 p-3 text-sm text-default-600">
@@ -449,4 +449,3 @@ export const OllamaLocalServerSection = observer(function OllamaLocalServerSecti
     </CollapsibleCard>
   );
 });
-

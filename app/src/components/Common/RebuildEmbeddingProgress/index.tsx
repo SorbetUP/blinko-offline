@@ -156,7 +156,7 @@ export const ImportProgress = observer(({ force }: { force: boolean }) => {
       case 'info':
         return <Icon icon="mingcute:information-fill" className="text-blue-500" width={16} height={16} />;
       default:
-        return <Icon icon="mingcute:dot-fill" className="text-gray-400" width={16} height={16} />;
+        return <Icon icon="ci:radio-unchecked" className="text-gray-400" width={16} height={16} />;
     }
   };
 

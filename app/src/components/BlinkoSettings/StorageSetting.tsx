@@ -49,7 +49,7 @@ export const StorageSetting = observer(() => {
       rightContent={<div>
         <Dropdown>
           <DropdownTrigger>
-            <Button startContent={<Icon icon="mdi:storage" width="20" height="20" />} color='primary' >
+            <Button startContent={<Icon icon="hugeicons:database-01" width="20" height="20" />} color='primary' >
               {blinko.config.value?.objectStorage ?? t('local-file-system')}
             </Button>
           </DropdownTrigger>

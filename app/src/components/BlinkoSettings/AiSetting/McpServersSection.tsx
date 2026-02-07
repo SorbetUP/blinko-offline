@@ -566,7 +566,7 @@ export const McpServersSection = observer(() => {
   };
 
   return (
-    <CollapsibleCard icon="simple-icons:mcp" title={t('mcp-client-servers')} decorations={false}>
+    <CollapsibleCard icon="hugeicons:api" title={t('mcp-client-servers')} decorations={false}>
       <div className="space-y-4">
         <div className="text-sm text-default-600 mb-4">
           {t('mcp-client-servers-desc', 'Configure external MCP servers that the AI can connect to and use their tools. These tools will be available during AI conversations.')}
@@ -602,7 +602,7 @@ export const McpServersSection = observer(() => {
 
           {(!aiStore.mcpServers.value || aiStore.mcpServers.value.length === 0) && (
             <div className="text-center py-8 text-default-400">
-              <Icon icon="simple-icons:mcp" width="48" className="mx-auto mb-2 opacity-50" />
+              <Icon icon="hugeicons:api" width="48" className="mx-auto mb-2 opacity-50" />
               <p>{t('no-mcp-servers', 'No MCP servers configured')}</p>
               <p className="text-sm mt-1">{t('import-mcp-json-hint', 'Click "Import mcp.json" to paste your MCP configuration, or manually add servers')}</p>
             </div>

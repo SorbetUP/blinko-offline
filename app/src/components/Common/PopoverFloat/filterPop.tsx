@@ -174,7 +174,7 @@ export default function FilterPop() {
           {tagStatus === "with" && (
             <div className="flex flex-col gap-2">
               <div className="text-sm font-medium flex items-center gap-2">
-                <Icon icon="solar:tags-bold" width="20" height="20" />
+                <Icon icon="solar:tag-outline" width="20" height="20" />
                 {t('select-tags')}
               </div>
               

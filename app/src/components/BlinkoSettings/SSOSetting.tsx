@@ -72,7 +72,7 @@ const OAUTH_TEMPLATES = {
   line: {
     id: 'line',
     name: 'LINE',
-    icon: 'logos:line',
+    icon: 'simple-icons:line',
   },
   instagram: {
     id: 'instagram',
@@ -82,7 +82,7 @@ const OAUTH_TEMPLATES = {
   coinbase: {
     id: 'coinbase',
     name: 'Coinbase',
-    icon: 'cryptocurrency:cb',
+    icon: 'simple-icons:coinbase',
   },
   yandex: {
     id: 'yandex',

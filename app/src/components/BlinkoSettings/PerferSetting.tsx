@@ -359,7 +359,7 @@ export const PerferSetting = observer(() => {
         <SelectDropdown
           value={blinko.config.value?.toolbarVisibility}
           placeholder={t('select-toolbar-visibility')}
-          icon="mdi:toolbar"
+          icon="hugeicons:settings-02"
           options={[
             { key: "always-show-toolbar", label: t('always-show-toolbar') },
             { key: "hide-toolbar-on-mobile", label: t('hide-toolbar-on-mobile') },

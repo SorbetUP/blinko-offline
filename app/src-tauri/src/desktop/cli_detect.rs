@@ -62,6 +62,28 @@ fn common_bin_dirs() -> Vec<PathBuf> {
         out.push(home.join(".local/bin"));
         out.push(home.join("bin"));
         out.push(home.join(".cargo/bin"));
+
+        // common JS toolchain shims
+        out.push(home.join(".volta/bin"));
+        out.push(home.join(".asdf/shims"));
+        out.push(home.join(".npm-global/bin"));
+        out.push(home.join(".npm-packages/bin"));
+        out.push(home.join(".yarn/bin"));
+        out.push(home.join(".yarn/global/node_modules/.bin"));
+        out.push(home.join(".local/share/pnpm"));
+        out.push(home.join(".local/share/pnpm/global/5/node_modules/.bin"));
+        out.push(home.join("Library/pnpm")); // macOS pnpm home
+
+        // nvm per-version bins (macOS GUI apps often miss these from PATH)
+        let nvm_node = home.join(".nvm/versions/node");
+        if let Ok(rd) = std::fs::read_dir(&nvm_node) {
+            for ent in rd.flatten() {
+                let p = ent.path();
+                if p.is_dir() {
+                    out.push(p.join("bin"));
+                }
+            }
+        }
     }
 
     out
@@ -108,6 +130,39 @@ fn find_in_path(base: &str) -> Option<PathBuf> {
 }
 
 #[cfg(unix)]
+fn extract_path_from_shell_output(text: &str) -> Option<PathBuf> {
+    for line in text.lines() {
+        let l = line.trim();
+        if l.is_empty() {
+            continue;
+        }
+        // `command -v` can sometimes print extra output (from shell init).
+        // Scan tokens and pick the first executable-looking path.
+        for tok in l.split_whitespace() {
+            let t = tok.trim();
+            if t.is_empty() {
+                continue;
+            }
+            if t.starts_with("~/") {
+                if let Some(home) = home_dir() {
+                    let p = home.join(t.trim_start_matches("~/"));
+                    if is_probably_executable(&p) {
+                        return Some(p);
+                    }
+                }
+            }
+            if t.starts_with('/') {
+                let p = PathBuf::from(t);
+                if is_probably_executable(&p) {
+                    return Some(p);
+                }
+            }
+        }
+    }
+    None
+}
+
+#[cfg(unix)]
 async fn resolve_with_shell(base: &str) -> Option<PathBuf> {
     // On macOS, GUI apps often have a truncated PATH. Using the user's shell as a login
     // shell tends to produce the PATH they actually use in Terminal.
@@ -121,32 +176,35 @@ async fn resolve_with_shell(base: &str) -> Option<PathBuf> {
     shells.push(PathBuf::from("/bin/bash"));
     shells.push(PathBuf::from("/bin/sh"));
 
+    let cmd = format!("type -P {base} 2>/dev/null || command -v {base} 2>/dev/null");
+
+    // Try both login and interactive-login shells. Many users set PATH in `.zshrc`.
+    let arg_sets: &[&[&str]] = &[&["-lc"], &["-lic"]];
+
     for shell in shells {
         if !shell.exists() {
             continue;
         }
-        let cmd = format!("command -v {}", base);
-        let mut p = Command::new(&shell);
-        p.args(["-lc", &cmd]);
-        p.stdin(std::process::Stdio::null());
-        p.stdout(std::process::Stdio::piped());
-        p.stderr(std::process::Stdio::null());
 
-        let out = tokio::time::timeout(Duration::from_secs(2), p.output())
-            .await
-            .ok()?
-            .ok()?;
-        if !out.status.success() {
-            continue;
-        }
-        let text = String::from_utf8_lossy(&out.stdout);
-        let first = text.lines().next().unwrap_or("").trim();
-        if first.is_empty() {
-            continue;
-        }
-        let path = PathBuf::from(first);
-        if is_probably_executable(&path) {
-            return Some(path);
+        for argset in arg_sets {
+            let mut p = Command::new(&shell);
+            p.args(*argset);
+            p.arg(&cmd);
+            p.stdin(std::process::Stdio::null());
+            p.stdout(std::process::Stdio::piped());
+            p.stderr(std::process::Stdio::null());
+
+            let out = tokio::time::timeout(Duration::from_secs(3), p.output())
+                .await
+                .ok()?
+                .ok()?;
+            if !out.status.success() {
+                continue;
+            }
+            let text = String::from_utf8_lossy(&out.stdout);
+            if let Some(p) = extract_path_from_shell_output(&text) {
+                return Some(p);
+            }
         }
     }
     None
@@ -199,7 +257,7 @@ async fn detect_one(name: &str, explicit_candidates: Vec<PathBuf>) -> CliBinaryI
             found: false,
             path: None,
             version: None,
-            error: Some("Not found in PATH".to_string()),
+            error: Some("Not found".to_string()),
         };
     };
 
@@ -246,4 +304,31 @@ pub async fn detect_ai_cli_binaries() -> Result<AiCliDetectResult, String> {
     }
 
     Ok(AiCliDetectResult { codex, claude })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[cfg(unix)]
+    fn make_executable(path: &Path) {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(path).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(path, perms).unwrap();
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn extract_path_from_shell_output_handles_noise() {
+        let p = std::env::temp_dir().join("blinko_cli_detect_test_bin");
+        std::fs::write(&p, b"#!/bin/sh\necho ok\n").unwrap();
+        make_executable(&p);
+
+        let out = format!("Last login: Fri Feb  7 21:00:00 on ttys000\n{}\n", p.display());
+        let found = extract_path_from_shell_output(&out).unwrap();
+        assert_eq!(found, p);
+
+        let _ = std::fs::remove_file(&p);
+    }
 }
