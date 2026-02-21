@@ -13,7 +13,7 @@
   "app": {
     "withGlobalTauri": true,
     "security": {
-      "csp": "default-src 'self'; connect-src 'self' ipc: http://127.0.0.1:* http://localhost:* https://tauri.localhost tauri://localhost https: ws://127.0.0.1:* ws://localhost:*; img-src 'self' data: blob: http://127.0.0.1:* http://localhost:*; media-src 'self' data: blob: http://127.0.0.1:* http://localhost:*; font-src 'self' data:; style-src 'self' 'unsafe-inline' http://127.0.0.1:* http://localhost:*; script-src 'self' 'unsafe-inline' 'unsafe-eval' http://127.0.0.1:* http://localhost:*;"
+      "csp": null
     },
     "windows": [
       {

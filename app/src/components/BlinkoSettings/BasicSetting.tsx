@@ -25,6 +25,7 @@ import Avatar from "boring-avatars";
 import { signOut } from "../Auth/auth-client";
 import { getBlinkoEndpoint } from "@/lib/blinkoEndpoint";
 import { useNavigate } from "react-router-dom";
+import { showResetMyDataDialog } from "./ResetMyDataDialog";
 
 export const BasicSetting = observer(() => {
   const user = RootStore.Get(UserStore)
@@ -200,6 +201,21 @@ export const BasicSetting = observer(() => {
               }}
             >
               {t('logout')}
+            </Button>
+            <Button
+              size="sm"
+              color="danger"
+              variant="flat"
+              startContent={<Icon icon="tabler:alert-triangle" width="18" height="18" />}
+              onPress={() => {
+                showResetMyDataDialog({
+                  onSuccess: async () => {
+                    await blinko.refreshData();
+                  }
+                })
+              }}
+            >
+              {t('reset-my-data')}
             </Button>
           </div>
         }

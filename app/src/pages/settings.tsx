@@ -25,9 +25,8 @@ import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { Icon } from '@/components/Common/Iconify/icons';
 import { HotkeySetting } from '@/components/BlinkoSettings/HotkeySetting';
 import { isDesktop, isInTauri } from '@/lib/tauriHelper';
-import { SyncSetting } from '@/components/BlinkoSettings/SyncSetting';
 import { useSearchParams } from 'react-router-dom';
-import { TrashSetting } from '@/components/BlinkoSettings/TrashSetting';
+import { UnifiedSyncSetting } from '@/components/BlinkoSettings/UnifiedSyncSetting';
 
 type SettingItem = {
   key: string;
@@ -46,14 +45,6 @@ export const allSettings: SettingItem[] = [
     component: <BasicSetting />,
     requireAdmin: false,
     keywords: ['basic', 'information', '基本信息', '基础设置'],
-  },
-  {
-    key: 'trash',
-    title: ('trash'),
-    icon: 'hugeicons:delete-02',
-    component: <TrashSetting />,
-    requireAdmin: false,
-    keywords: ['trash', 'recycle', 'bin', 'poubelle', 'recycle bin', '回收站', '垃圾桶'],
   },
   {
     key: 'prefer',
@@ -153,12 +144,12 @@ export const allSettings: SettingItem[] = [
   },
   {
     key: 'sync',
-    title: 'Sync',
+    title: 'settings-sync-title',
     icon: 'tabler:refresh',
-    component: <SyncSetting />,
+    component: <UnifiedSyncSetting />,
     requireAdmin: false,
-    requireTauri: true,
-    keywords: ['sync', 'synchronization', '同步'],
+    requireTauri: false,
+    keywords: ['sync', 'synchronization', 'server sync', 'replication', '同步', 'réplication'],
   },
   {
     key: 'about',
@@ -187,6 +178,12 @@ const Page = observer(() => {
     settings = settings.filter((setting) =>
       (setting.key !== 'hotkey' || isDesktop())
     );
+
+    // Sync settings: on web, show only for superadmins (it contains server replication tools).
+    settings = settings.filter((setting) => {
+      if (setting.key !== 'sync') return true;
+      return isInTauri() || user.isSuperAdmin;
+    });
 
     if (blinkoStore.searchText) {
       const lowerSearchText = blinkoStore.searchText.toLowerCase();

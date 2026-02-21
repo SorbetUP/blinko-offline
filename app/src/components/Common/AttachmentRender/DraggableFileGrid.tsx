@@ -6,6 +6,7 @@ import { api } from '@/lib/trpc';
 type DraggableFileGridProps = {
   files: FileType[];
   preview?: boolean;
+  dragDisabled?: boolean;
   columns?: number;
   onReorder?: (newFiles: FileType[]) => void;
   type: 'image' | 'other';
@@ -16,6 +17,7 @@ type DraggableFileGridProps = {
 export const DraggableFileGrid = ({
   files,
   preview = false,
+  dragDisabled = false,
   onReorder,
   type,
   className,
@@ -68,7 +70,7 @@ export const DraggableFileGrid = ({
                 key={`${file.name}-${index}`}
                 draggableId={`${file.name}-${index}`}
                 index={index}
-                isDragDisabled={preview}
+                isDragDisabled={preview || dragDisabled}
               >
                 {(provided, snapshot) => (
                   <div

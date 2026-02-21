@@ -13,6 +13,7 @@ import { DBJob } from './jobs/dbjob';
 import { RebuildEmbeddingJob } from './jobs/rebuildEmbeddingJob';
 import { RecommandJob } from './jobs/recommandJob';
 import { AIScheduledTaskJob } from './jobs/aiScheduledTaskJob';
+import { InterServerSyncJob } from './jobs/interServerSyncJob';
 
 // tRPC related imports
 import { createContext } from './context';
@@ -27,6 +28,7 @@ import { openApiDocument } from './swagger';
 // Express router imports
 import fileRouter from './routerExpress/file/file';
 import uploadRouter from './routerExpress/file/upload';
+import overwriteRouter from './routerExpress/file/overwrite';
 import deleteRouter from './routerExpress/file/delete';
 import s3fileRouter from './routerExpress/file/s3file';
 import pluginRouter from './routerExpress/file/plugin';
@@ -34,6 +36,9 @@ import rssRouter from './routerExpress/rss';
 import openaiRouter from './routerExpress/openai';
 import mcpRouter from './routerExpress/mcp';
 import changesRouter from './routerExpress/changes';
+import serverSyncRouter from './routerExpress/serverSync';
+import { prisma } from './prisma';
+import { backfillNotesFromSyncChanges } from './lib/sync_notes';
 
 // Vite integration
 import ViteExpress from 'vite-express';
@@ -81,6 +86,7 @@ async function initializeJobs() {
     await RebuildEmbeddingJob.initialize();
     await RecommandJob.initialize();
     await AIScheduledTaskJob.initialize();
+    await InterServerSyncJob.Start(undefined, false);
     
     console.log('All scheduled jobs initialized successfully');
   } catch (error) {
@@ -149,6 +155,7 @@ async function setupApiRoutes(app: express.Application) {
   // File handling endpoints
   app.use('/api/file', fileRouter);
   app.use('/api/file/upload', uploadRouter);
+  app.use('/api/file/overwrite', overwriteRouter);
   app.use('/api/file/delete', deleteRouter);
   app.use('/api/s3file', s3fileRouter);
   
@@ -228,6 +235,7 @@ async function setupApiRoutes(app: express.Application) {
 
   // Other API endpoints
   app.use('/changes', changesRouter);
+  app.use('/api/server-sync', serverSyncRouter);
   app.use('/api/rss', rssRouter);
   app.use('/v1', openaiRouter);
 
@@ -288,6 +296,13 @@ async function bootstrap() {
       immutable: true,
       setHeaders: (res: express.Response, path: string) => {
         const ext = path.split('.').pop()?.toLowerCase();
+        // Never cache HTML or service-worker assets aggressively, otherwise deployments look "not applied"
+        // for up to 7 days due to `immutable` caching.
+        if (ext === 'html' || path.endsWith('/sw.js') || path.endsWith('/registerSW.js') || ext === 'webmanifest') {
+          res.setHeader('Cache-Control', 'no-cache');
+          res.setHeader('Expires', new Date(0).toUTCString());
+          return;
+        }
         if (['png', 'webp', 'svg', 'json', 'ico', 'gif', 'mp4'].includes(ext || '')) {
           res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
           res.setHeader('Expires', new Date(Date.now() + 604800000).toUTCString());
@@ -313,6 +328,19 @@ async function bootstrap() {
 
     // Initialize scheduled jobs
     await initializeJobs();
+
+    // One-time best-effort backfill: older versions stored sync ops in `sync_changes` without
+    // materializing them into `notes`, so the web UI would appear empty. This makes upgrades safe.
+    void (async () => {
+      try {
+        const res = await backfillNotesFromSyncChanges(prisma, { maxOps: 50_000 });
+        if (res.opsRead > 0) {
+          console.log(`sync backfill: accounts=${res.accounts} ops=${res.opsRead} notesApplied=${res.notesApplied}`);
+        }
+      } catch (err) {
+        console.error('sync backfill error:', err);
+      }
+    })();
 
     // Start or update server
     if (!server) {

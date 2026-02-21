@@ -3,6 +3,7 @@ import { PrismaClient } from '@prisma/client';
 import { promises as fs } from 'fs';
 import { randomBytes, pbkdf2 } from 'crypto';
 import * as path from 'path';
+import { fileURLToPath } from 'url';
 import { FontSeed, systemDefaultFont, cdnFonts } from './defaultFonts';
 
 export async function hashPassword(password: string): Promise<string> {
@@ -239,13 +240,33 @@ function detectFontCategory(fontName: string): string {
   return "sans-serif";
 }
 
-main()
-  .then(e => {
-    console.log("✨ Seed done! ✨")
-  })
-  .catch((e) => {
-    console.error(e);
-  })
-  .finally(async () => {
-    await prisma.$disconnect();
-  });
+// Do not auto-run seeding logic on import. The server imports `hashPassword`/`verifyPassword`,
+// and importing this module must not attempt to connect to the database.
+const isMain =
+  // Bun supports `import.meta.main`.
+  // @ts-ignore
+  (typeof Bun !== "undefined" && (import.meta as any).main === true) ||
+  // Node ESM fallback: compare the current file path to argv[1].
+  (() => {
+    const entry = process.argv?.[1];
+    if (!entry) return false;
+    try {
+      const current = fileURLToPath(import.meta.url);
+      return path.resolve(current) === path.resolve(entry);
+    } catch {
+      return false;
+    }
+  })();
+
+if (isMain) {
+  main()
+    .then(() => {
+      console.log("✨ Seed done! ✨");
+    })
+    .catch((e) => {
+      console.error(e);
+    })
+    .finally(async () => {
+      await prisma.$disconnect();
+    });
+}

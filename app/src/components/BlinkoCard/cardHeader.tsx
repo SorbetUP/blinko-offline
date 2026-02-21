@@ -7,10 +7,10 @@ import { Note, NoteType } from '@shared/lib/types';
 import { RootStore } from '@/store';
 import dayjs from '@/lib/dayjs';
 import { useTranslation } from 'react-i18next';
-import { _ } from '@/lib/lodash';
 import { useIsIOS } from '@/lib/hooks';
 import { DialogStore } from '@/store/module/Dialog';
 import { BlinkoShareDialog } from '../BlinkoShareDialog';
+import { getBlinkoEndpoint } from "@/lib/blinkoEndpoint";
 import { observer } from 'mobx-react-lite';
 import { AvatarAccount, CommentButton, UserAvatar } from './commentButton';
 import { HistoryButton } from '../BlinkoNoteHistory/HistoryButton';
@@ -102,11 +102,11 @@ export const CardHeader = observer(({ blinkoItem, blinko, isShareMode, isExpande
         )}
 
         <Tooltip content={t('edit-time')} delay={1000}>
-          <div 
+          <div
             className={`${isExpanded ? 'text-sm' : 'text-xs'} text-desc cursor-pointer transition-colors`}
             onClick={(e) => {
               e.stopPropagation();
-              blinko.curSelectedNote = _.cloneDeep(blinkoItem);
+              blinko.curSelectedNote = blinkoItem;
               ShowEditTimeModel();
             }}
           >
@@ -180,7 +180,7 @@ export const CardHeader = observer(({ blinkoItem, blinko, isShareMode, isExpande
         {!isShareMode && (
           <LeftCickMenu
             className={isIOSDevice ? 'ml-[10px]' : (blinkoItem.isTop ? "ml-[10px]" : 'ml-auto group-hover/card:ml-2')}
-            onTrigger={() => { blinko.curSelectedNote = _.cloneDeep(blinkoItem) }}
+            onTrigger={() => { blinko.curSelectedNote = blinkoItem }}
           />
         )}
       </div>
@@ -204,13 +204,13 @@ const ShareButton = observer(({ blinkoItem, isIOSDevice }: { blinkoItem: Note, i
             }`}
           onClick={async (e) => {
             e.stopPropagation()
-            blinko.curSelectedNote = _.cloneDeep(blinkoItem)
+            blinko.curSelectedNote = blinkoItem
             RootStore.Get(DialogStore).setData({
               isOpen: true,
               size: 'md',
               title: t('share'),
               content: <BlinkoShareDialog defaultSettings={{
-                shareUrl: blinkoItem.shareEncryptedUrl ? window.location.origin + '/share/' + blinkoItem.shareEncryptedUrl : undefined,
+                shareUrl: blinkoItem.shareEncryptedUrl ? getBlinkoEndpoint(`/share/${blinkoItem.shareEncryptedUrl}`) : undefined,
                 expiryDate: blinkoItem.shareExpiryDate ?? undefined,
                 password: blinkoItem.sharePassword ?? '',
                 isShare: blinkoItem.isShare

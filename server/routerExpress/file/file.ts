@@ -148,6 +148,45 @@ router.get(/.*/, async (req, res) => {
   const needThumbnail = req.query.thumbnail === 'true';
   const isDownload = req.query.download === 'true';
 
+  // Backward compatibility: some legacy content references `/api/file/<numericId>`.
+  // If an attachment exists with that id, redirect to its real `path` (usually `/api/file/<filename>`).
+  // This avoids 404s without requiring a DB migration to be applied first.
+  if (/^\d+$/.test(fullPath) && !fullPath.includes('temp/') && !fullPath.endsWith('.bko')) {
+    try {
+      const numericId = Number(fullPath);
+      if (Number.isFinite(numericId) && numericId > 0) {
+        const attachment = await prisma.attachments.findUnique({
+          where: { id: numericId },
+          include: { note: { select: { isShare: true, accountId: true } } },
+        });
+
+        if (attachment?.path) {
+          const isShared = !!attachment.note?.isShare;
+          const tokenId = token?.id != null ? Number(token.id) : null;
+          const ownerId = attachment.note?.accountId ?? null;
+          const attachmentOwnerId = attachment.accountId ?? null;
+
+          if (!token) {
+            if (!isShared) {
+              return res.status(401).json({ error: "Unauthorized" });
+            }
+          } else {
+            if (!isShared && ownerId !== tokenId && attachmentOwnerId !== tokenId) {
+              return res.status(401).json({ error: "Unauthorized" });
+            }
+          }
+
+          const originalUrl = (req as any).originalUrl as string | undefined;
+          const qs = originalUrl && originalUrl.includes('?') ? originalUrl.slice(originalUrl.indexOf('?')) : '';
+          const target = attachment.path + (qs ? (attachment.path.includes('?') ? '&' + qs.slice(1) : qs) : '');
+          return res.redirect(302, target);
+        }
+      }
+    } catch (error) {
+      console.error('Error resolving numeric attachment id:', error);
+    }
+  }
+
   // Validate and resolve path using FileService's secure path validation
   let filePath: string;
   try {

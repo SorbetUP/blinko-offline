@@ -19,8 +19,12 @@ export function isCredentialsContent(content: string): boolean {
 
 export function maskCredentialsContent(content: string): string {
   const title = extractMarkdownH1Line(content);
-  // Conservative fallback: if no explicit H1 title, don't leak the first line.
-  return title ?? '# (credentials)';
+  if (title) return title;
+
+  const fallback = extractFirstNonTagLine(content);
+  if (fallback) return `# ${fallback}`;
+
+  return '# (credentials)';
 }
 
 export function extractMarkdownH1Line(content: string): string | null {
@@ -32,6 +36,32 @@ export function extractMarkdownH1Line(content: string): string | null {
     if (/^#\s+\S/.test(line)) return line;
   }
   return null;
+}
+
+function extractFirstNonTagLine(content: string): string | null {
+  if (!content) return null;
+  const withoutCodeBlocks = content.replace(/```[\s\S]*?```/g, ' ');
+  for (const rawLine of withoutCodeBlocks.split('\n')) {
+    let line = rawLine.trim();
+    if (!line) continue;
+
+    // Skip hashtag-only / tag lines like "#credentials" or "#foo #bar".
+    // If the user explicitly wrote an H1 ("# Title"), it's already handled above.
+    if (/^#\S/.test(line)) continue;
+
+    line = cleanupTitleLine(line);
+    if (!line) continue;
+    return line;
+  }
+  return null;
+}
+
+function cleanupTitleLine(line: string): string {
+  return line
+    .replace(/^[-*]\s+\[[xX ]\]\s+/, '')
+    .replace(/^[-*]\s+/, '')
+    .replace(/^\d+\.\s+/, '')
+    .trim();
 }
 
 function normalizeHashtagToken(token: string): string | null {

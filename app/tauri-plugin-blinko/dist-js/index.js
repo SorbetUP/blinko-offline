@@ -12,4 +12,15 @@ async function openAppSettings() {
     await invoke('plugin:blinko|open_app_settings');
 }
 
-export { openAppSettings, setStatusBarColor };
+async function presentShareSheet(payload) {
+    await invoke('plugin:blinko|present_share_sheet', { payload });
+}
+async function getPendingSharePayload() {
+    const res = await invoke('plugin:blinko|get_pending_share_payload');
+    return (res === null || res === void 0 ? void 0 : res.payload) ?? null;
+}
+async function clearPendingSharePayload() {
+    await invoke('plugin:blinko|clear_pending_share_payload');
+}
+
+export { clearPendingSharePayload, getPendingSharePayload, openAppSettings, presentShareSheet, setStatusBarColor };

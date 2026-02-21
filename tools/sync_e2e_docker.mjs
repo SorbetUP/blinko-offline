@@ -35,6 +35,25 @@ const fetchJson = async (url, init = {}) => {
   return data;
 };
 
+const pullChangesUntil = async ({ baseUrl, token, predicate, maxPages = 50 }) => {
+  let since = '0';
+  for (let i = 0; i < maxPages; i++) {
+    const pulled = await fetchJson(`${baseUrl}/changes?since=${encodeURIComponent(since)}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const ops = pulled?.ops ?? [];
+    if (Array.isArray(ops) && ops.some(predicate)) {
+      return { ok: true, pulled };
+    }
+    const next = pulled?.cursor ?? null;
+    if (!next || next === since || !Array.isArray(ops) || ops.length === 0) {
+      break;
+    }
+    since = String(next);
+  }
+  return { ok: false, pulled: null };
+};
+
 const waitForHealth = async (baseUrl, timeoutMs = 120_000) => {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
@@ -114,7 +133,9 @@ const startLocalApi = async () => {
   });
 
   let baseUrl;
-  const deadline = Date.now() + 60_000;
+  // Cold builds (fresh Rust target dir, CI machines) can take >60s before the server prints its URL.
+  const timeoutMs = Number(process.env.LOCAL_API_START_TIMEOUT_MS ?? 300_000);
+  const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline && !baseUrl) {
     const chunk = await new Promise((resolve) => {
       proc.stdout.once('data', resolve);
@@ -127,7 +148,7 @@ const startLocalApi = async () => {
   }
   if (!baseUrl) {
     proc.kill('SIGTERM');
-    throw new Error('Failed to start local API server');
+    throw new Error(`Failed to start local API server within ${timeoutMs}ms`);
   }
 
   const errBuf = [];
@@ -233,14 +254,25 @@ const main = async () => {
 
       await localRequest(local.baseUrl, localToken, '/sync/now', { method: 'POST' });
 
-      const pulled = await fetchJson(`${serverA}/changes?since=0`, {
-        headers: { Authorization: `Bearer ${tokenA}` },
+      const foundPush = await pullChangesUntil({
+        baseUrl: serverA,
+        token: tokenA,
+        predicate: (op) => op?.entity_type === 'note' && (op?.payload_json ?? '').includes(localNoteContent),
+        maxPages: 50,
       });
-      const ops = pulled?.ops ?? [];
-      if (!Array.isArray(ops) || !ops.some((op) => op?.entity_type === 'note' && (op?.payload_json ?? '').includes(localNoteContent))) {
+      if (!foundPush.ok) {
         throw new Error('Sync push failed: remote /changes did not receive note op');
       }
-      debug.steps.push({ step: 'after_push', sync_id: syncId, ops_count: ops.length });
+      debug.steps.push({
+        step: 'after_push',
+        sync_id: syncId,
+        ops_count: Array.isArray(foundPush.pulled?.ops) ? foundPush.pulled.ops.length : null,
+      });
+
+      const remoteNotesAfterPush = await listServerNotes(serverA, tokenA, localNoteContent);
+      if (!Array.isArray(remoteNotesAfterPush) || !remoteNotesAfterPush.some((n) => (n?.content ?? '').includes(localNoteContent))) {
+        throw new Error('Sync push stored op but did not materialize note into server notes table (UI would not show it)');
+      }
 
       // Remote update: post a newer note payload with the same sync_id, then sync again and assert local updated.
       const updatedContent = `${localNoteContent}-updated-remote`;
@@ -267,9 +299,12 @@ const main = async () => {
         }),
       });
 
-      const remoteAfterInject = await fetchJson(`${serverA}/changes?since=0`, {
-        headers: { Authorization: `Bearer ${tokenA}` },
-      });
+      const remoteAfterInject = (await pullChangesUntil({
+        baseUrl: serverA,
+        token: tokenA,
+        predicate: (op) => op?.entity_id === syncId && (op?.payload_json ?? '').includes(updatedContent),
+        maxPages: 50,
+      })).pulled;
       debug.steps.push({
         step: 'after_inject',
         sync_id: syncId,

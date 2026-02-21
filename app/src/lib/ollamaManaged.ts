@@ -1,4 +1,4 @@
-import { isInTauri } from '@/lib/tauriHelper';
+import { isDesktop, isInTauri } from '@/lib/tauriHelper';
 
 export type OllamaStatus = {
   managed_supported: boolean;
@@ -56,7 +56,7 @@ const normalizeEndpoint = (endpoint: string | undefined | null): string => {
 };
 
 async function inv<T>(cmd: string, payload?: Record<string, any>): Promise<T> {
-  if (!isInTauri()) {
+  if (!isInTauri() || !isDesktop()) {
     throw new Error('Ollama managed mode is only available in the desktop app.');
   }
   const { invoke } = await import('@tauri-apps/api/core');

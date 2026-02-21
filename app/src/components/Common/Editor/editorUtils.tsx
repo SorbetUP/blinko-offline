@@ -40,7 +40,8 @@ export const HandleFileType = (originFiles: Attachment[]): FileType[] => {
       extension: extension ?? '',
       preview: file.path,
       uploadPromise: new PromiseState({ function: async () => file.path }),
-      type: file.type
+      type: file.type,
+      noteId: file.noteId
     }
   })
   res?.map(i => i.uploadPromise.call())
@@ -61,10 +62,13 @@ export const getEditorElements = (mode: ViewMode, editor: Vditor) => {
   }
 }
 
-export const FocusEditorFixMobile = () => {
+export const FocusEditorFixMobile = (root?: ParentNode | null) => {
   try {
     requestAnimationFrame(() => {
-      const editorElements = document.querySelectorAll('.vditor-ir .vditor-reset') as NodeListOf<HTMLElement>
+      const scope: ParentNode = root ?? document
+      const editorElements = scope.querySelectorAll(
+        '.vditor-wysiwyg .vditor-reset, .vditor-ir .vditor-reset, .vditor-sv .vditor-reset'
+      ) as NodeListOf<HTMLElement>
       if (editorElements.length === 0) return
 
       if (editorElements.length > 0) {

@@ -17,4 +17,6 @@ export type FileType = {
   preview: any
   uploadPromise: PromiseState<any>
   type: string // audio/webm
+  // Present when derived from an existing note attachment.
+  noteId?: number | null
 }

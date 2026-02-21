@@ -23,11 +23,12 @@ interface AudioMetadata {
 interface Props {
   files: FileType[];
   preview?: boolean;
+  hiddenFileNames?: Set<string>;
 }
 
 const INITIAL_DISPLAY_COUNT = 3;
 
-export const AudioRender = observer(({ files, preview = false }: Props) => {
+export const AudioRender = observer(({ files, preview = false, hiddenFileNames }: Props) => {
   const [audioMetadata, setAudioMetadata] = useState<Record<string, AudioMetadata>>({});
   const musicManager = RootStore.Get(MusicManagerStore);
   const [isPlaying, setIsPlaying] = useState<Record<string, boolean>>({});
@@ -447,7 +448,12 @@ export const AudioRender = observer(({ files, preview = false }: Props) => {
     );
   };
 
-  const audioFiles = files?.filter(i => i.previewType === 'audio') || [];
+  const audioFiles =
+    files?.filter((i) => {
+      if (i.previewType !== 'audio') return false;
+      if (!hiddenFileNames || hiddenFileNames.size === 0) return true;
+      return !hiddenFileNames.has(i.name);
+    }) || [];
 
   return (
     <div className="flex flex-col gap-2">

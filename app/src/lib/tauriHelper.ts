@@ -1,5 +1,4 @@
 import { platform } from '@tauri-apps/plugin-os'
-import { BaseDirectory } from '@tauri-apps/plugin-fs'
 import { save } from '@tauri-apps/plugin-dialog'
 import { helper } from './helper'
 import { RootStore } from '@/store'
@@ -7,15 +6,26 @@ import { ToastPlugin } from '@/store/module/Toast/Toast'
 import i18n from './i18n'
 import { UserStore } from '@/store/user'
 import { download } from '@tauri-apps/plugin-upload'
-import { downloadDir, publicDir } from '@tauri-apps/api/path'
+import { appDataDir, downloadDir, join } from '@tauri-apps/api/path'
 import { setStatusBarColor } from 'tauri-plugin-blinko-api'
 import { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { getBlinkoEndpoint } from './blinkoEndpoint';
+import { openPath, openUrl } from '@tauri-apps/plugin-opener';
+import { mkdir } from '@tauri-apps/plugin-fs';
 
 export interface PermissionStatus {
     audio: boolean;
     camera: boolean;
+}
+
+function hasTauriRuntime(): boolean {
+    try {
+        // @ts-ignore
+        return typeof window !== 'undefined' && window.__TAURI__ !== undefined;
+    } catch {
+        return false;
+    }
 }
 
 /**
@@ -23,6 +33,7 @@ export interface PermissionStatus {
  * @returns wether the platform is android
  */
 export function isAndroid() {
+    if (!hasTauriRuntime()) return false;
     try {
         return platform() === 'android';
     } catch (error) {
@@ -30,7 +41,17 @@ export function isAndroid() {
     }
 }
 
+export function isIOS() {
+    if (!hasTauriRuntime()) return false;
+    try {
+        return platform() === 'ios';
+    } catch (error) {
+        return false
+    }
+}
+
 export function isDesktop() {
+    if (!hasTauriRuntime()) return false;
     try {
        return platform() === 'macos' || platform() === 'windows' || platform() === 'linux';
     } catch (error) {
@@ -39,6 +60,7 @@ export function isDesktop() {
 }
 
 export function isWindows() {
+    if (!hasTauriRuntime()) return false;
     try {
         return platform() === 'windows';
     } catch (error) {
@@ -47,12 +69,7 @@ export function isWindows() {
 }
 
 export function isInTauri() {
-    try {
-        // @ts-ignore
-        return typeof window !== 'undefined' && window.__TAURI__ !== undefined;
-    } catch (error) {
-        return false
-    }
+    return hasTauriRuntime();
 }
 
 /**
@@ -119,7 +136,24 @@ export async function downloadFromLink(uri: string, filename?: string) {
 
             RootStore.Get(ToastPlugin).dismiss('downloading');
             RootStore.Get(ToastPlugin).success(i18n.t('download-success') + ' ' + downloadDirPath);
-        } else if (platform() !== 'ios') {
+        } else if (platform() === 'ios') {
+            const base = await appDataDir();
+            const dir = await join(base, 'blinko', 'downloads');
+            await mkdir(dir, { recursive: true });
+            const targetPath = await join(dir, sanitizeFilename(filename));
+
+            await download(
+                downloadUrl.toString(),
+                targetPath,
+                () => {},
+                new Map([['Content-Type', 'application/octet-stream']])
+            );
+
+            const { presentShareSheet } = await import('tauri-plugin-blinko-api');
+            await presentShareSheet({ path: targetPath, mime: null, filename });
+            RootStore.Get(ToastPlugin).dismiss('downloading');
+            RootStore.Get(ToastPlugin).success(i18n.t('download-success'));
+        } else {
             const savePath = await save({
                 filters: [
                     {
@@ -144,10 +178,128 @@ export async function downloadFromLink(uri: string, filename?: string) {
                 RootStore.Get(ToastPlugin).success(i18n.t('download-success'));
             }
         }
-
-        //todo: IOS download
     } catch (error) {
         RootStore.Get(ToastPlugin).dismiss('downloading');
+        RootStore.Get(ToastPlugin).error(`${i18n.t('download-failed')}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+}
+
+function sanitizeFilename(input: string): string {
+    const name = (input || 'downloaded_file').trim() || 'downloaded_file';
+    // Conservative filename sanitization across Windows/macOS/Linux.
+    return name
+        .replace(/[\\/:*?"<>|\u0000-\u001F]/g, '_')
+        .replace(/\s+/g, ' ')
+        .slice(0, 180);
+}
+
+type ResolvedDownload = {
+    downloadUrl: URL;
+    filename: string;
+}
+
+function resolveDownloadUrl(uri: string, filename?: string): ResolvedDownload | null {
+    const resolvedUri = (() => {
+        if (!uri) return '';
+        if (uri.startsWith('http://') || uri.startsWith('https://') || uri.startsWith('tauri://')) {
+            return uri;
+        }
+        return getBlinkoEndpoint(uri);
+    })();
+
+    let parsedUrl: URL | null = null;
+    if (resolvedUri) {
+        try {
+            parsedUrl = new URL(resolvedUri);
+        } catch {
+            try {
+                parsedUrl = new URL(resolvedUri, window.location.origin);
+            } catch {
+                parsedUrl = null;
+            }
+        }
+    }
+
+    if (!parsedUrl) return null;
+
+    const derived = filename || parsedUrl.pathname.split('/').pop() || 'downloaded_file';
+    const safeFilename = sanitizeFilename(derived);
+
+    const token = RootStore.Get(UserStore).tokenData.value?.token;
+    const downloadUrl = new URL(parsedUrl.toString());
+    if (token) {
+        downloadUrl.searchParams.set('token', token);
+    }
+
+    return { downloadUrl, filename: safeFilename };
+}
+
+/**
+ * Downloads (if needed) and opens a file using the system default app (PDF viewer, Office suite, etc.).
+ *
+ * - Desktop: downloads to `$APPCACHE/blinko/open-with-default/` and opens the file.
+ * - Android: downloads to the Downloads directory (so external apps can access it) and opens the file.
+ * - Web: opens the URL in a new tab.
+ */
+export async function openFromLinkInDefaultApp(uri: string, filename?: string) {
+    const resolved = resolveDownloadUrl(uri, filename);
+    if (!resolved) {
+        RootStore.Get(ToastPlugin).error(`${i18n.t('download-failed')}: Invalid URL`);
+        return;
+    }
+
+    if (!isInTauri()) {
+        window.open(resolved.downloadUrl.toString(), '_blank');
+        return;
+    }
+
+    if (platform() === 'ios') {
+        try {
+            RootStore.Get(ToastPlugin).loading(i18n.t('downloading'), { id: 'opening-document' });
+            const base = await appDataDir();
+            const dir = await join(base, 'blinko', 'open-with-default');
+            await mkdir(dir, { recursive: true });
+            const targetPath = await join(dir, resolved.filename);
+
+            await download(
+                resolved.downloadUrl.toString(),
+                targetPath,
+                () => {},
+                new Map([['Content-Type', 'application/octet-stream']])
+            );
+
+            const { presentShareSheet } = await import('tauri-plugin-blinko-api');
+            await presentShareSheet({ path: targetPath, mime: null, filename: resolved.filename });
+            RootStore.Get(ToastPlugin).dismiss('opening-document');
+        } catch (error) {
+            RootStore.Get(ToastPlugin).dismiss('opening-document');
+            await openUrl(resolved.downloadUrl.toString());
+        }
+        return;
+    }
+
+    try {
+        RootStore.Get(ToastPlugin).loading(i18n.t('downloading'), { id: 'opening-document' });
+
+        // Save to the system Downloads folder so other apps can access it (Android)
+        // and to stay within the `$DOWNLOAD` scope (desktop).
+        const dir = await downloadDir();
+
+        const targetPath = await join(dir, resolved.filename);
+        await download(
+            resolved.downloadUrl.toString(),
+            targetPath,
+            ({ progress, total }) => {
+                // Useful for debugging large downloads.
+                // console.log(`download progress: ${progress} / ${total} bytes`);
+            },
+            new Map([['Content-Type', 'application/octet-stream']])
+        );
+
+        RootStore.Get(ToastPlugin).dismiss('opening-document');
+        await openPath(targetPath);
+    } catch (error) {
+        RootStore.Get(ToastPlugin).dismiss('opening-document');
         RootStore.Get(ToastPlugin).error(`${i18n.t('download-failed')}: ${error instanceof Error ? error.message : String(error)}`);
     }
 }

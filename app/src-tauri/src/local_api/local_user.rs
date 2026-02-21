@@ -150,6 +150,34 @@ pub async fn save_local_user(
     Ok(())
 }
 
+/// Ensures a default local user exists, creating one if needed.
+/// This is called on app startup to ensure the user can authenticate after DB reset.
+pub async fn ensure_default_user(
+    repo: &SettingsRepository,
+    device_id: &str,
+) -> Result<(), String> {
+    // Check if any local user exists
+    if load_local_user(repo).await?.is_some() {
+        return Ok(()); // User already exists
+    }
+
+    // Create default user with random password
+    let default_username = "local";
+    let random_password = Uuid::new_v4().to_string();
+
+    create_local_user(repo, device_id, default_username, &random_password).await?;
+
+    // Store credentials in settings for frontend access
+    repo.set("default_username", default_username, device_id).await?;
+    repo.set("default_password", &random_password, device_id).await?;
+
+    eprintln!("✓ Created default local user with auto-generated credentials");
+    eprintln!("  Username: {}", default_username);
+    eprintln!("  Password stored in settings (accessible via Tauri command)");
+
+    Ok(())
+}
+
 fn hash_password(password: &str, salt: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(salt.as_bytes());

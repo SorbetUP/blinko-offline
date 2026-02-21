@@ -1,12 +1,12 @@
-use tauri::{AppHandle, Emitter, Runtime, Manager};
+use tauri::{AppHandle, Emitter, Manager, Runtime};
 // Position and Size are not used in this file anymore
 use serde::{Deserialize, Serialize};
-use std::sync::{Mutex, LazyLock};
+use std::sync::{LazyLock, Mutex};
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
-use get_selected_text::get_selected_text;
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
 use arboard::Clipboard;
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+use get_selected_text::get_selected_text;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 use mouse_position::mouse_position::Mouse;
 
@@ -46,7 +46,8 @@ pub struct TextSelectionEvent {
 // We'll pass the app handle through the monitoring thread instead of using a global
 
 // Global text selection monitoring state
-static TEXT_SELECTION_STATE: LazyLock<Mutex<TextSelectionMonitor>> = LazyLock::new(|| Mutex::new(TextSelectionMonitor::new()));
+static TEXT_SELECTION_STATE: LazyLock<Mutex<TextSelectionMonitor>> =
+    LazyLock::new(|| Mutex::new(TextSelectionMonitor::new()));
 
 #[derive(Debug, Clone)]
 pub struct TextSelectionMonitor {
@@ -61,7 +62,6 @@ impl TextSelectionMonitor {
             trigger_modifier: "ctrl".to_string(),
         }
     }
-
 }
 
 #[tauri::command]
@@ -70,9 +70,12 @@ pub fn setup_text_selection_monitoring<R: Runtime>(
     enabled: bool,
     trigger_modifier: String,
 ) -> Result<(), String> {
-    use tauri_plugin_global_shortcut::{Shortcut, GlobalShortcutExt};
+    use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
 
-    println!("🔧 setup_text_selection_monitoring called: enabled={}, modifier={}", enabled, trigger_modifier);
+    println!(
+        "🔧 setup_text_selection_monitoring called: enabled={}, modifier={}",
+        enabled, trigger_modifier
+    );
 
     let mut monitor = TEXT_SELECTION_STATE.lock().unwrap();
 
@@ -90,18 +93,40 @@ pub fn setup_text_selection_monitoring<R: Runtime>(
             _ => "Control+Backquote",
         };
 
-        println!("📝 Registering shortcut: {}", shortcut_str);
+        println!("📝 Attempting to register shortcut: {}", shortcut_str);
 
-        let parsed_shortcut: Shortcut = shortcut_str.parse()
-            .map_err(|e| format!("Failed to parse shortcut '{}': {}", shortcut_str, e))?;
+        // Try to parse and register the shortcut, but don't fail if it's already in use
+        match shortcut_str.parse::<Shortcut>() {
+            Ok(parsed_shortcut) => {
+                match app.global_shortcut().register(parsed_shortcut) {
+                    Ok(_) => {
+                        // Store the shortcut mapping for the global handler (normalize to lowercase)
+                        crate::desktop::register_shortcut_command(
+                            shortcut_str.to_lowercase(),
+                            "text-selection".to_string(),
+                        );
 
-        app.global_shortcut().register(parsed_shortcut)
-            .map_err(|e| format!("Failed to register shortcut: {}", e))?;
-
-        // Store the shortcut mapping for the global handler (normalize to lowercase)
-        crate::desktop::register_shortcut_command(shortcut_str.to_lowercase(), "text-selection".to_string());
-
-        println!("✅ Text selection monitoring enabled with {} + Backquote", trigger_modifier);
+                        println!(
+                            "✅ Text selection monitoring enabled with {} + Backquote",
+                            trigger_modifier
+                        );
+                    }
+                    Err(e) => {
+                        println!(
+                            "⚠️  Failed to register shortcut '{}': {}",
+                            shortcut_str, e
+                        );
+                        println!("ℹ️  Text selection monitoring is enabled, but the hotkey could not be registered.");
+                        println!("ℹ️  This is usually because the key combination is already in use by the system.");
+                        println!("ℹ️  You can still use text selection features via the settings UI.");
+                    }
+                }
+            }
+            Err(e) => {
+                println!("⚠️  Failed to parse shortcut '{}': {}", shortcut_str, e);
+                println!("ℹ️  Text selection monitoring is enabled without hotkey.");
+            }
+        }
     } else {
         // Disable monitoring and unregister shortcuts
         monitor.enabled = false;
@@ -124,7 +149,6 @@ pub fn setup_text_selection_monitoring<R: Runtime>(
     Ok(())
 }
 
-
 // Helper function to get and validate mouse position
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 fn get_mouse_position<R: Runtime>(_app: &AppHandle<R>) -> (f64, f64) {
@@ -144,8 +168,10 @@ fn get_mouse_position<R: Runtime>(_app: &AppHandle<R>) -> (f64, f64) {
                         let monitor_size = primary_monitor.size();
                         let monitor_scale = primary_monitor.scale_factor();
 
-                        println!("📺 Primary monitor: size=({}x{}), scale={}",
-                                monitor_size.width, monitor_size.height, monitor_scale);
+                        println!(
+                            "📺 Primary monitor: size=({}x{}), scale={}",
+                            monitor_size.width, monitor_size.height, monitor_scale
+                        );
 
                         // If scale factor > 1, mouse position is likely in physical pixels
                         // Convert to logical pixels for Tauri
@@ -158,14 +184,18 @@ fn get_mouse_position<R: Runtime>(_app: &AppHandle<R>) -> (f64, f64) {
                         // Ensure window fits within monitor bounds
                         let window_width = crate::desktop::QUICKTOOL_WIDTH;
                         let window_height = crate::desktop::QUICKTOOL_HEIGHT;
-                        let max_x = (monitor_size.width as f64 / monitor_scale) - window_width - 10.0;
-                        let max_y = (monitor_size.height as f64 / monitor_scale) - window_height - 10.0;
+                        let max_x =
+                            (monitor_size.width as f64 / monitor_scale) - window_width - 10.0;
+                        let max_y =
+                            (monitor_size.height as f64 / monitor_scale) - window_height - 10.0;
 
                         pos_x = pos_x.max(10.0).min(max_x);
                         pos_y = pos_y.max(10.0).min(max_y);
 
-                        println!("📐 Constrained position: ({}, {}) within bounds (0,0)-({}, {})",
-                                pos_x, pos_y, max_x, max_y);
+                        println!(
+                            "📐 Constrained position: ({}, {}) within bounds (0,0)-({}, {})",
+                            pos_x, pos_y, max_x, max_y
+                        );
                     } else {
                         println!("⚠️ No primary monitor found, using fallback positioning");
                         // Fallback: assume 1920x1080 monitor with scale 1.0
@@ -207,7 +237,11 @@ fn get_mouse_position<R: Runtime>(_app: &AppHandle<R>) -> (f64, f64) {
 }
 
 // Helper function to show and position quicktool window
-fn show_quicktool_window_at_position<R: Runtime>(app: &AppHandle<R>, x: f64, y: f64) -> Result<(), String> {
+fn show_quicktool_window_at_position<R: Runtime>(
+    app: &AppHandle<R>,
+    x: f64,
+    y: f64,
+) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("quicktool") {
         println!("✅ Found existing quicktool window, repositioning and showing");
 
@@ -223,16 +257,20 @@ fn show_quicktool_window_at_position<R: Runtime>(app: &AppHandle<R>, x: f64, y: 
                 // Use JavaScript to navigate back to quicktool route
                 let js_code = r#"
                     console.log('🔄 Current location:', window.location.href);
-                    if (window.location.hash !== '#/quicktool') {
-                        window.location.hash = '#/quicktool';
-                        console.log('✅ JavaScript navigation to /quicktool completed');
+                    if (window.location.pathname !== '/quicktool') {
+                        window.history.replaceState(null, '', '/quicktool');
+                        window.dispatchEvent(new PopStateEvent('popstate'));
+                        console.log('✅ JavaScript navigation to /quicktool completed via history.replaceState');
                     } else {
                         console.log('✅ Already at /quicktool, no navigation needed');
                     }
                 "#;
 
                 if let Err(e) = window.eval(js_code) {
-                    eprintln!("❌ Failed to navigate quicktool window back to /quicktool via JS: {}", e);
+                    eprintln!(
+                        "❌ Failed to navigate quicktool window back to /quicktool via JS: {}",
+                        e
+                    );
                 } else {
                     println!("✅ Quicktool window navigated back to /quicktool via JavaScript");
                 }
@@ -244,16 +282,19 @@ fn show_quicktool_window_at_position<R: Runtime>(app: &AppHandle<R>, x: f64, y: 
 
         // Position window first
         let position = tauri::Position::Logical(tauri::LogicalPosition::new(x, y));
-        window.set_position(position)
+        window
+            .set_position(position)
             .map_err(|e| format!("Failed to set window position: {}", e))?;
 
         // Small delay to ensure navigation completes
         std::thread::sleep(std::time::Duration::from_millis(50));
 
-        window.show()
+        window
+            .show()
             .map_err(|e| format!("Failed to show window: {}", e))?;
 
-        window.set_focus()
+        window
+            .set_focus()
             .map_err(|e| format!("Failed to focus window: {}", e))?;
 
         // Debug: Check if window is actually visible
@@ -263,7 +304,10 @@ fn show_quicktool_window_at_position<R: Runtime>(app: &AppHandle<R>, x: f64, y: 
             Err(e) => println!("❌ Failed to check window visibility: {}", e),
         }
 
-        println!("✅ Quicktool window repositioned and shown at ({}, {})", x, y);
+        println!(
+            "✅ Quicktool window repositioned and shown at ({}, {})",
+            x, y
+        );
         Ok(())
     } else {
         // Create new window if it doesn't exist
@@ -352,7 +396,10 @@ fn send_text_selection_event<R: Runtime>(app: &AppHandle<R>, text_event: &TextSe
     if let Some(quicktool_window) = app.get_webview_window("quicktool") {
         match quicktool_window.emit("text-selection-detected", text_event) {
             Ok(_) => println!("📡 Successfully emitted text selection event to quicktool window"),
-            Err(e) => eprintln!("❌ Failed to emit text selection event to quicktool window: {}", e),
+            Err(e) => eprintln!(
+                "❌ Failed to emit text selection event to quicktool window: {}",
+                e
+            ),
         }
     } else {
         eprintln!("❌ Quicktool window not found for event emission");
@@ -367,26 +414,37 @@ fn send_text_selection_event<R: Runtime>(app: &AppHandle<R>, text_event: &TextSe
 
 // Function to check if text selection is enabled for a modifier
 pub fn is_text_selection_enabled_for(modifier: &str) -> bool {
-    println!("🔍 Checking if text selection is enabled for modifier: {}", modifier);
+    println!(
+        "🔍 Checking if text selection is enabled for modifier: {}",
+        modifier
+    );
 
     let monitor = TEXT_SELECTION_STATE.lock().unwrap();
 
-    println!("📊 Current monitor state: enabled={}, trigger_modifier={}", monitor.enabled, monitor.trigger_modifier);
+    println!(
+        "📊 Current monitor state: enabled={}, trigger_modifier={}",
+        monitor.enabled, monitor.trigger_modifier
+    );
 
     monitor.enabled && monitor.trigger_modifier == modifier
 }
 
 #[tauri::command]
 pub fn copy_to_clipboard(text: String) -> Result<(), String> {
-    println!("📋 copy_to_clipboard called with text: '{}' (length: {})", text, text.len());
+    println!(
+        "📋 copy_to_clipboard called with text: '{}' (length: {})",
+        text,
+        text.len()
+    );
 
     // Use arboard for cross-platform clipboard access
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
-        let mut clipboard = Clipboard::new()
-            .map_err(|e| format!("Failed to access clipboard: {}", e))?;
+        let mut clipboard =
+            Clipboard::new().map_err(|e| format!("Failed to access clipboard: {}", e))?;
 
-        clipboard.set_text(&text)
+        clipboard
+            .set_text(&text)
             .map_err(|e| format!("Failed to set clipboard text: {}", e))?;
 
         println!("✅ Clipboard updated with text");
@@ -433,13 +491,16 @@ pub fn show_quicktool<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("quicktool") {
         // Position at center of screen
         let position = tauri::Position::Logical(tauri::LogicalPosition::new(400.0, 300.0));
-        window.set_position(position)
+        window
+            .set_position(position)
             .map_err(|e| format!("Failed to set position: {}", e))?;
 
-        window.show()
+        window
+            .show()
             .map_err(|e| format!("Failed to show window: {}", e))?;
 
-        window.set_focus()
+        window
+            .set_focus()
             .map_err(|e| format!("Failed to focus window: {}", e))?;
 
         println!("✅ Quicktool window shown at (400, 300)");
@@ -453,7 +514,6 @@ pub fn show_quicktool<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
     }
 }
 
-
 // Get selected text directly without using clipboard
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 fn get_selected_text_directly() -> Result<String, String> {
@@ -461,14 +521,20 @@ fn get_selected_text_directly() -> Result<String, String> {
 
     // Check accessibility permissions on macOS
     if !query_accessibility_permissions() {
-        println!("⚠️  Accessibility permissions not granted - text selection may not work properly");
+        println!(
+            "⚠️  Accessibility permissions not granted - text selection may not work properly"
+        );
         println!("ℹ️  On macOS, please grant accessibility permissions in System Settings > Privacy & Security > Accessibility");
     }
 
     match get_selected_text() {
         Ok(text) => {
             if !text.trim().is_empty() {
-                println!("✅ Selected text found: '{}' (length: {})", text, text.len());
+                println!(
+                    "✅ Selected text found: '{}' (length: {})",
+                    text,
+                    text.len()
+                );
                 Ok(text)
             } else {
                 println!("❌ Selected text is empty");
@@ -485,5 +551,3 @@ fn get_selected_text_directly() -> Result<String, String> {
         }
     }
 }
-
-

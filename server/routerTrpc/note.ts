@@ -7,6 +7,7 @@ import { _ } from '@shared/lib/lodash';
 import { NoteType } from '../../shared/lib/types';
 import { attachmentsSchema, historySchema, notesSchema, tagSchema, tagsToNoteSchema, commentsSchema } from '@shared/lib/prismaZodType';
 import { getGlobalConfig } from './config';
+import { getServerInstanceId } from '../lib/serverInstance';
 import { FileService } from '../lib/files';
 import { AiService } from '@server/aiServer';
 import { SendWebhook } from '@server/lib/helper';
@@ -14,12 +15,39 @@ import { Context } from '../context';
 import { cache } from '@shared/lib/cache';
 import { AiModelFactory } from '@server/aiServer/aiModelFactory';
 import { authProcedure, demoAuthMiddleware, publicProcedure, router } from '@server/middleware';
+import { ensureNoteHasSyncId, emitSyncChangeForNote } from '@server/lib/sync_notes';
+
+const TAG_SEGMENT_RE = /^[\p{L}\p{N}_][\p{L}\p{N}_-]{0,63}$/u;
+const TRAILING_PUNCT_RE = /[,*?.。!！?？;；:："'”’)\]}>\u3001]+$/u;
+
+function normalizeHashtagToken(raw: string): string | null {
+  const token = (raw ?? '').trim().replace(TRAILING_PUNCT_RE, '');
+  if (!token) return null;
+  // Avoid turning shebangs and "/path" fragments into tags (e.g. "#!/usr/bin/env").
+  if (token.startsWith('!') || token.startsWith('/')) return null;
+
+  const segments = token.split('/');
+  if (segments.some((s) => !s)) return null;
+  for (const seg of segments) {
+    if (!TAG_SEGMENT_RE.test(seg)) return null;
+  }
+
+  // Heuristic: ignore short purely-numeric tokens that usually come from "Issue #14" or counters.
+  if (/^\p{N}+$/u.test(token) && token.length < 4) return null;
+
+  return token;
+}
 
 const extractHashtags = (input: string): string[] => {
-  const withoutCodeBlocks = input.replace(/```[\s\S]*?```/g, '');
-  const hashtagRegex = /(?<!:\/\/)(?<=\s|^)#[^\s#]+(?=\s|$)/g;
-  const matches = withoutCodeBlocks.match(hashtagRegex);
-  return matches ? matches : [];
+  const withoutCodeBlocks = (input ?? '').replace(/```[\s\S]*?```/g, '');
+  const out: string[] = [];
+  // Only consider tokens that start a word or follow whitespace.
+  const re = /(^|\s)#([^\s#]+)/gu;
+  for (const match of withoutCodeBlocks.matchAll(re)) {
+    const normalized = normalizeHashtagToken(match[2] ?? '');
+    if (normalized) out.push(`#${normalized}`);
+  }
+  return out;
 };
 
 export const noteRouter = router({
@@ -880,6 +908,8 @@ export const noteRouter = router({
     .output(z.any())
     .mutation(async function ({ input, ctx }) {
       let { id, isArchived, isRecycle, type, attachments, content, isTop, isShare, references } = input;
+      const instanceId = await getServerInstanceId(prisma);
+      const syncDeviceId = `server-web:${instanceId}:${ctx.id}`;
 
       // Check for internal sharing permission if updating an existing note
       let isSharedEditor = false;
@@ -918,6 +948,23 @@ export const noteRouter = router({
       const tagTree = helper.buildHashTagTreeFromHashString(extractHashtags(content?.replace(/\\/g, '') + ' '));
       let newTags: Prisma.tagCreateManyInput[] = [];
       const config = await getGlobalConfig({ ctx });
+
+      const emitSyncForNote = async (noteId: number, isDeleted: boolean) => {
+        const { syncId } = await ensureNoteHasSyncId(prisma, noteId);
+        const stamp = input.updatedAt ?? new Date();
+        await prisma.notes.update({
+          where: { id: noteId },
+          data: {
+            syncId,
+            syncDeviceId,
+            syncCreatedAt: input.createdAt,
+            syncUpdatedAt: stamp,
+            syncDeletedAt: isDeleted ? stamp : null,
+            syncRev: { increment: 1 },
+          },
+        });
+        await emitSyncChangeForNote(prisma, Number(ctx.id), noteId, syncDeviceId);
+      };
 
       const markdownImages =
         content?.match(/!\[.*?\]\((\/api\/(?:s3)?file\/[^)]+)\)/g)?.map((match) => {
@@ -1017,6 +1064,7 @@ export const noteRouter = router({
 
         const note = await prisma.notes.update({ where: whereClause, data: update });
         if (content == null) {
+          await emitSyncForNote(note.id, Boolean(note.isRecycle));
           SendWebhook({ ...note, attachments }, isRecycle ? 'delete' : 'update', ctx);
           return note;
         }
@@ -1127,6 +1175,7 @@ export const noteRouter = router({
           }
         }
 
+        await emitSyncForNote(note.id, Boolean(note.isRecycle));
         SendWebhook({ ...note, attachments }, isRecycle ? 'delete' : 'update', ctx);
         return note;
       } else {
@@ -1223,6 +1272,7 @@ export const noteRouter = router({
             }
           }
 
+          await emitSyncForNote(note.id, false);
           SendWebhook({ ...note, attachments }, 'create', ctx);
 
           return note;
@@ -1316,7 +1366,35 @@ export const noteRouter = router({
     .mutation(async function ({ input, ctx }) {
       const { ids } = input;
       SendWebhook({ ids }, 'delete', ctx);
-      return await prisma.notes.updateMany({ where: { id: { in: ids }, accountId: Number(ctx.id) }, data: { isRecycle: true } });
+      const res = await prisma.notes.updateMany({ where: { id: { in: ids }, accountId: Number(ctx.id) }, data: { isRecycle: true } });
+
+      // Emit sync tombstones so remote -> local devices see deletions.
+      // This mirrors the upsert flow, but is used by bulk UI actions.
+      const instanceId = await getServerInstanceId(prisma);
+      const syncDeviceId = `server-web:${instanceId}:${ctx.id}`;
+      const stamp = new Date();
+      const noteIds = (
+        await prisma.notes.findMany({
+          where: { id: { in: ids }, accountId: Number(ctx.id) },
+          select: { id: true },
+        })
+      ).map((n) => n.id);
+      for (const noteId of noteIds) {
+        const { syncId } = await ensureNoteHasSyncId(prisma, noteId);
+        await prisma.notes.update({
+          where: { id: noteId },
+          data: {
+            syncId,
+            syncDeviceId,
+            syncUpdatedAt: stamp,
+            syncDeletedAt: stamp,
+            syncRev: { increment: 1 },
+          },
+        });
+        await emitSyncChangeForNote(prisma, Number(ctx.id), noteId, syncDeviceId);
+      }
+
+      return res;
     }),
   deleteMany: authProcedure
     .use(demoAuthMiddleware)
@@ -1840,6 +1918,26 @@ export async function deleteNotes(ids: number[], ctx: Context) {
       referencedBy: true,
     },
   });
+
+  // Emit sync tombstones before hard-delete, otherwise local devices cannot learn about the deletion.
+  const instanceId = await getServerInstanceId(prisma);
+  const syncDeviceId = `server-web:${instanceId}:${ctx.id}`;
+  const stamp = new Date();
+  for (const note of notes) {
+    const { syncId } = await ensureNoteHasSyncId(prisma, note.id);
+    await prisma.notes.update({
+      where: { id: note.id },
+      data: {
+        syncId,
+        syncDeviceId,
+        isRecycle: true,
+        syncUpdatedAt: stamp,
+        syncDeletedAt: stamp,
+        syncRev: { increment: 1 },
+      },
+    });
+    await emitSyncChangeForNote(prisma, Number(ctx.id), note.id, syncDeviceId);
+  }
 
   const handleDeleteRelation = async () => {
     for (const note of notes) {

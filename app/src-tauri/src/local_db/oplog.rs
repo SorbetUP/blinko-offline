@@ -32,7 +32,7 @@ impl OplogRepository {
         device_id: &str,
     ) -> Result<OplogEntry, String> {
         let now = Utc::now();
-        sqlx::query(
+        let res = sqlx::query(
             "INSERT INTO oplog (entity_type, entity_id, op, payload_json, ts, device_id) VALUES (?, ?, ?, ?, ?, ?)",
         )
         .bind(entity_type)
@@ -45,10 +45,7 @@ impl OplogRepository {
         .await
         .map_err(|e| format!("Failed to append oplog: {e}"))?;
 
-        let id = sqlx::query_scalar::<_, i64>("SELECT last_insert_rowid()")
-            .fetch_one(&self.pool)
-            .await
-            .map_err(|e| format!("Failed to read oplog id: {e}"))?;
+        let id = res.last_insert_rowid();
 
         self.get_by_id(id).await
     }

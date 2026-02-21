@@ -1,41 +1,103 @@
-import { api } from "../../lib/trpc";
-import { eventBus } from "../../lib/event";
-import * as System from 'systemjs/dist/system.js';
-import i18n from "@/lib/i18n";
-import { ToastPlugin } from "../module/Toast/Toast";
-import { BaseStore } from "../baseStore";
-import { BlinkoStore } from "../blinkoStore";
-import { HubStore } from "../hubStore";
-import { ResourceStore } from "../resourceStore";
-import { StorageState } from "../standard/StorageState";
-import { PromiseState } from "../standard/PromiseState";
-import { PromisePageState } from "../standard/PromiseState";
-import { PluginApiStore } from "./pluginApiStore";
-import copy from "copy-to-clipboard"
-import { UserStore } from "../user";
+// NOTE: This module is imported at runtime (e.g. via `pluginManagerStore.ts`).
+// Keep it free of heavy imports and cross-package type dependencies, otherwise the
+// plugin system can become a large, fragile dependency graph.
+
+export type BlinkoCopyToClipboard = (text: string, options?: any) => boolean;
+
+export type PluginMode = "create" | "edit" | "comment";
+
+export type EditorFooterSlot = {
+  name: string;
+  content: (mode?: PluginMode) => HTMLElement;
+  order?: number;
+  isHidden?: boolean;
+  className?: string;
+  showCondition?: (mode: PluginMode) => boolean;
+  hideCondition?: (mode: PluginMode) => boolean;
+  style?: any;
+  maxWidth?: number;
+  onClick?: () => void;
+  onHover?: () => void;
+  onLeave?: () => void;
+  data?: any;
+};
+
+export type CardFooterSlot = {
+  name: string;
+  content: (note?: any) => HTMLElement;
+  order?: number;
+  isHidden?: boolean;
+  className?: string;
+  showCondition?: (note: any) => boolean;
+  hideCondition?: (note: any) => boolean;
+  style?: any;
+  maxWidth?: number;
+  onClick?: () => void;
+  onHover?: () => void;
+  onLeave?: () => void;
+  data?: any;
+};
+
+export type ToolbarIcon = {
+  name: string;
+  icon: string;
+  tooltip: string;
+  content?: (mode?: PluginMode) => HTMLElement;
+  placement?: "top" | "bottom" | "left" | "right";
+  maxWidth?: number;
+  onClick?: () => void;
+};
+
+export type RightClickMenu = {
+  name: string;
+  label: string;
+  icon?: string;
+  onClick: (note: any) => void;
+  disabled?: boolean;
+};
+
+export type DialogOptions = {
+  title: string;
+  size:
+    | "sm"
+    | "md"
+    | "lg"
+    | "xl"
+    | "2xl"
+    | "3xl"
+    | "4xl"
+    | "5xl"
+    | "full"
+    | "xs";
+  content: () => HTMLElement;
+};
+
+export interface PluginApi {
+  closeToolBarContent(name: string): void;
+  addToolBarIcon(options: ToolbarIcon): void;
+  addRightClickMenu(options: RightClickMenu): void;
+  showDialog(options: DialogOptions): void;
+  closeDialog(): void;
+  addAiWritePrompt(name: string, prompt: string, icon?: string): void;
+  addCardFooterSlot(options: CardFooterSlot): void;
+  addEditorFooterSlot(options: EditorFooterSlot): void;
+}
 
 declare global {
   interface Window {
     Blinko: {
-      api: typeof api;
-      eventBus: typeof eventBus;
-      i18n: typeof i18n;
+      // These are runtime objects; the shape is intentionally loose to keep
+      // declaration generation lightweight for plugin authors.
+      api: unknown;
+      eventBus: unknown;
+      i18n: unknown;
       version: string;
-      copyToClipboard: typeof copy;
-      toast: InstanceType<typeof ToastPlugin>;
-      store: {
-        StorageState: typeof StorageState;
-        PromiseState: typeof PromiseState;
-        PromisePageState: typeof PromisePageState;
-        blinkoStore: InstanceType<typeof BlinkoStore>;
-        baseStore: InstanceType<typeof BaseStore>;
-        hubStore: InstanceType<typeof HubStore>;
-        resourceStore: InstanceType<typeof ResourceStore>;
-        userStore: InstanceType<typeof UserStore>;
-      };
+      copyToClipboard: BlinkoCopyToClipboard;
+      toast: unknown;
+      store: Record<string, unknown>;
       globalRefresh: () => void;
-    } & InstanceType<typeof PluginApiStore>;
-    System?: typeof System;
+    } & PluginApi;
+    System?: unknown;
   }
 }
 

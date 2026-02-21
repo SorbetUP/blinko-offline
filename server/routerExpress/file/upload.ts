@@ -4,6 +4,8 @@ import { getTokenFromRequest } from '../../lib/helper';
 import { Readable, PassThrough } from 'stream';
 import busboy from 'busboy';
 import cors from 'cors';
+import { prisma } from '../../prisma';
+import { getServerInstanceId } from '../../lib/serverInstance';
 
 const router = express.Router();
 
@@ -77,13 +79,17 @@ router.post('/', async (req, res) => {
 
     const contentType = req.headers['content-type'] || '';
     if (!contentType.includes('multipart/form-data')) {
-      return res.status(400).json({ error: "Content type must be multipart/form-data" });
+      return res.status(400).json({ error: "Content type must be multipart/form-data", contentType });
+    }
+    if (!contentType.includes('boundary=')) {
+      return res.status(400).json({ error: "Malformed multipart/form-data (missing boundary)", contentType });
     }
     
     const bb = busboy({
       headers: req.headers
     });
     
+    let busboyErrored = false;
     let fileInfo: {
       stream: PassThrough | null,
       filename: string,
@@ -93,11 +99,22 @@ router.post('/', async (req, res) => {
       audioDuration?: string,
       audioDurationSeconds?: number
     } | null = null;
+    let fileDone: Promise<void> | null = null;
+    let resolveFileDone: (() => void) | null = null;
 
     let isUserVoiceRecording = false;
     let audioDuration: string | null = null;
     let audioDurationSeconds: number | null = null;
     let syncId: string | null = null;
+    let skipSyncEmit = false;
+
+    bb.on('error', (error) => {
+      busboyErrored = true;
+      console.error('Upload error (busboy):', error);
+      if (!res.headersSent) {
+        res.status(400).json({ error: 'Malformed multipart/form-data request' });
+      }
+    });
 
     bb.on('field', (fieldname, value) => {
       if (fieldname === 'isUserVoiceRecording' && value === 'true') {
@@ -108,38 +125,57 @@ router.post('/', async (req, res) => {
         audioDurationSeconds = parseInt(value, 10);
       } else if (fieldname === 'sync_id' || fieldname === 'syncId') {
         syncId = value;
+      } else if (fieldname === 'skip_sync_emit' || fieldname === 'skipSyncEmit') {
+        skipSyncEmit = value === '1' || value === 'true';
       }
     });
 
     bb.on('file', (fieldname, stream, info) => {
-      if (fieldname === 'file') {
-        const passThrough = new PassThrough();
-        let fileSize = 0;
-        const decodedFilename = Buffer.from(info.filename, 'binary').toString('utf-8');
-        
-        stream.on('data', (chunk) => {
-          fileSize += chunk.length;
-          passThrough.write(chunk);
-        });
-        
-        stream.on('end', () => {
-          passThrough.end();
-          fileInfo = {
-            stream: passThrough,
-            filename: decodedFilename.replace(/\s+/g, "_"),
-            mimeType: info.mimeType,
-            size: fileSize,
-            isUserVoiceRecording,
-            audioDuration: audioDuration || undefined,
-            audioDurationSeconds: audioDurationSeconds || undefined
-          };
-        });
+      if (fieldname !== 'file') {
+        stream.resume();
+        return;
       }
+
+      const passThrough = new PassThrough();
+      const decodedFilename = Buffer.from(info.filename, 'binary').toString('utf-8');
+      fileInfo = {
+        stream: passThrough,
+        filename: decodedFilename.replace(/\s+/g, "_"),
+        mimeType: info.mimeType,
+        size: 0,
+        isUserVoiceRecording,
+        audioDuration: audioDuration || undefined,
+        audioDurationSeconds: audioDurationSeconds || undefined
+      };
+
+      fileDone = new Promise<void>((resolve) => {
+        resolveFileDone = resolve;
+      });
+
+      stream.on('data', (chunk) => {
+        fileInfo!.size += chunk.length;
+        passThrough.write(chunk);
+      });
+
+      stream.on('end', () => {
+        passThrough.end();
+        resolveFileDone?.();
+      });
+
+      stream.on('error', (error) => {
+        console.error('Upload error (stream):', error);
+        passThrough.destroy(error as any);
+        resolveFileDone?.();
+      });
     });
     
     bb.on('finish', async () => {
+      if (busboyErrored) return;
+      if (fileDone) {
+        await fileDone;
+      }
       if (!fileInfo || !fileInfo.stream) {
-        return res.status(400).json({ error: "No files received." });
+        return res.status(400).json({ error: "No files received.", contentType });
       }
       
       try {
@@ -157,20 +193,71 @@ router.post('/', async (req, res) => {
           metadata.audioDurationSeconds = fileInfo.audioDurationSeconds;
         }
 
-        const filePath = await FileService.uploadFileStream({
-          stream: webReadableStream,
-          originalName: fileInfo.filename,
-          fileSize: fileInfo.size,
-          type: fileInfo.mimeType,
-          accountId: Number(token.id),
-          metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
-          syncId
-        });
-        
-        res.set({
-          'Access-Control-Allow-Origin': req.headers.origin || '',
-          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-          'Access-Control-Allow-Headers': '*',
+	        const filePath = await FileService.uploadFileStream({
+	          stream: webReadableStream,
+	          originalName: fileInfo.filename,
+	          fileSize: fileInfo.size,
+	          type: fileInfo.mimeType,
+	          accountId: Number(token.id),
+	          metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
+	          syncId
+	        });
+
+	        // Emit a sync op for attachments so sync-mode clients can pull metadata and download by sync id.
+	        // Inter-server replication uses /changes for metadata; allow skipping this emit.
+	        if (!skipSyncEmit) {
+	          // We do not include server storage paths in the payload `path`; clients store under their own
+	          // attachments dir using a stable "<sync_id>_<filename>" name.
+	          try {
+	            const accountId = Number(token.id);
+	            const instanceId = await getServerInstanceId(prisma);
+	            const attachment = syncId
+	              ? await prisma.attachments.findFirst({
+	                  where: { accountId, syncId },
+	                  orderBy: { id: 'desc' },
+	                })
+	              : await prisma.attachments.findFirst({
+	                  where: { accountId, path: filePath.filePath },
+	                  orderBy: { id: 'desc' },
+	                });
+
+	            if (attachment?.syncId) {
+	              const safeName = (fileInfo.filename ?? 'upload.bin').replace(/[\\/]/g, '_');
+	              const payload = {
+	                id: 0,
+	                sync_id: attachment.syncId,
+	                note_id: null,
+	                filename: attachment.name || safeName,
+	                mime: attachment.type || fileInfo.mimeType || 'application/octet-stream',
+	                size: Number((attachment.size as any)?.toString?.() ?? attachment.size ?? fileInfo.size ?? 0) || 0,
+	                sha256: '',
+	                path: `${attachment.syncId}_${safeName}`,
+	                created_at: attachment.createdAt?.toISOString?.() ?? new Date().toISOString(),
+	                updated_at: attachment.updatedAt?.toISOString?.() ?? new Date().toISOString(),
+	                deleted_at: null,
+	              };
+
+	              await prisma.syncChanges.create({
+	                data: {
+	                  accountId,
+	                  entityType: 'attachment',
+	                  entityId: attachment.syncId,
+	                  op: 'upsert',
+	                  payloadJson: JSON.stringify(payload),
+	                  ts: new Date(),
+	                  deviceId: `server-upload:${instanceId}:${accountId}`,
+	                },
+	              });
+	            }
+	          } catch (err) {
+	            console.error('attachment sync emit error:', err);
+	          }
+	        }
+	        
+	        res.set({
+	          'Access-Control-Allow-Origin': req.headers.origin || '',
+	          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+	          'Access-Control-Allow-Headers': '*',
           'Access-Control-Allow-Credentials': 'true'
         });
         

@@ -23,6 +23,32 @@ impl ConflictRepository {
         Self { pool }
     }
 
+    pub async fn unresolved_count(&self) -> Result<i64, String> {
+        let (count,): (i64,) =
+            sqlx::query_as("SELECT COUNT(*) FROM conflicts WHERE resolved_payload IS NULL")
+                .fetch_one(&self.pool)
+                .await
+                .map_err(|e| format!("Failed to count conflicts: {e}"))?;
+        Ok(count)
+    }
+
+    pub async fn list_unresolved(
+        &self,
+        limit: i64,
+        offset: i64,
+    ) -> Result<Vec<ConflictEntry>, String> {
+        sqlx::query_as::<_, ConflictEntry>(
+            "SELECT id, entity_type, entity_id, local_payload, remote_payload, resolved_payload, created_at \
+             FROM conflicts WHERE resolved_payload IS NULL \
+             ORDER BY created_at DESC LIMIT ? OFFSET ?",
+        )
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| format!("Failed to list conflicts: {e}"))
+    }
+
     pub async fn insert(
         &self,
         entity_type: &str,
@@ -32,7 +58,7 @@ impl ConflictRepository {
         resolved_payload: Option<&str>,
     ) -> Result<ConflictEntry, String> {
         let now = Utc::now();
-        sqlx::query(
+        let res = sqlx::query(
             "INSERT INTO conflicts (entity_type, entity_id, local_payload, remote_payload, resolved_payload, created_at) VALUES (?, ?, ?, ?, ?, ?)",
         )
         .bind(entity_type)
@@ -45,10 +71,7 @@ impl ConflictRepository {
         .await
         .map_err(|e| format!("Failed to insert conflict: {e}"))?;
 
-        let id = sqlx::query_scalar::<_, i64>("SELECT last_insert_rowid()")
-            .fetch_one(&self.pool)
-            .await
-            .map_err(|e| format!("Failed to read conflict id: {e}"))?;
+        let id = res.last_insert_rowid();
 
         self.get_by_id(id).await
     }
@@ -61,5 +84,24 @@ impl ConflictRepository {
         .fetch_one(&self.pool)
         .await
         .map_err(|e| format!("Failed to get conflict: {e}"))
+    }
+
+    pub async fn mark_resolved(&self, id: i64, resolved_payload: &str) -> Result<(), String> {
+        sqlx::query("UPDATE conflicts SET resolved_payload = ? WHERE id = ?")
+            .bind(resolved_payload)
+            .bind(id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| format!("Failed to mark conflict resolved: {e}"))?;
+        Ok(())
+    }
+
+    pub async fn delete(&self, id: i64) -> Result<(), String> {
+        sqlx::query("DELETE FROM conflicts WHERE id = ?")
+            .bind(id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| format!("Failed to delete conflict: {e}"))?;
+        Ok(())
     }
 }

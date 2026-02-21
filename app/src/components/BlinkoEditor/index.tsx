@@ -6,6 +6,7 @@ import dayjs from "@/lib/dayjs"
 import { useEffect, useRef } from "react"
 import { NoteType } from "@shared/lib/types"
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom"
+import { isDesktop } from "@/lib/tauriHelper"
 
 type IProps = {
   mode: 'create' | 'edit',
@@ -118,7 +119,12 @@ export const BlinkoEditor = observer(({ mode, onSended, onHeightChange, isInDial
   // Use Tauri hotkey hook
 
 
-  return <div className={`h-full flex flex-col ${withoutOutline ? '' : ''}`} ref={editorRef} id='global-editor' data-tauri-drag-region onClick={() => {
+  return <div
+    className={`h-full flex flex-col ${withoutOutline ? '' : ''}`}
+    ref={editorRef}
+    id='global-editor'
+    data-tauri-drag-region={isDesktop() ? true : undefined}
+    onClick={() => {
     blinko.isCreateMode = mode == 'create'
   }}>
     <Editor
@@ -190,5 +196,4 @@ export const BlinkoEditor = observer(({ mode, onSended, onHeightChange, isInDial
       }} />
   </div>
 })
-
 

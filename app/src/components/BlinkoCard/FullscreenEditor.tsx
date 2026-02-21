@@ -8,7 +8,6 @@ import { BlinkoStore } from "@/store/blinkoStore";
 import { RootStore } from "@/store";
 import { eventBus } from "@/lib/event";
 import { useMediaQuery } from "usehooks-ts";
-import { _ } from "@/lib/lodash";
 import { BlinkoItem } from "./index";
 
 interface FullscreenEditorProps {
@@ -25,6 +24,10 @@ export const FullscreenEditor = observer(({ blinkoItem, isOpen, onClose }: Fulls
   
   // Clean up fullscreen editor state when closing
   const handleClose = () => {
+    // Trigger save before closing (only saves if content changed)
+    eventBus.emit('editor:triggerSend');
+
+    // Close immediately - save happens in background
     blinko.fullscreenEditorNoteId = null;
     onClose();
   };
@@ -61,13 +64,13 @@ export const FullscreenEditor = observer(({ blinkoItem, isOpen, onClose }: Fulls
       if (blinkoItem.id) {
         blinko.noteDetail.call({ id: blinkoItem.id }).then(() => {
           if (blinko.noteDetail.value) {
-            blinko.curSelectedNote = _.cloneDeep(blinko.noteDetail.value);
+            blinko.curSelectedNote = blinko.noteDetail.value;
           }
         });
       } else {
         // Fallback to prop data if no id
-        blinko.curSelectedNote = _.cloneDeep(blinkoItem);
-        blinko.noteDetail.value = _.cloneDeep(blinkoItem);
+        blinko.curSelectedNote = blinkoItem;
+        blinko.noteDetail.value = blinkoItem;
       }
     }
   }, [isOpen, blinkoItem.id]);

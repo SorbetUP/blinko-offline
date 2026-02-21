@@ -10,7 +10,9 @@ export const helper = {
   regex: {
     isEndsWithHashTag: /#[/\w\p{L}\p{N}]*$/u,
     //lookbehind assertions in ios regex is not supported
-    isContainHashTag: /#[^\s#]*(?:[*?.。]|$)/g
+    // Keep in sync with server + local-db tag parsing: avoid "#!/usr/bin/env" and "#/path" becoming tags.
+    // Note: no `/g` flag so `.test()` is stable across calls.
+    isContainHashTag: /#[\p{L}\p{N}_][\p{L}\p{N}_-]*(?:\/[\p{L}\p{N}_][\p{L}\p{N}_-]*)*/u
   },
   assemblyPageResult<T>(args: { data: T[], page: number, size: number, result: T[] }): { result: T[], isLoadAll: boolean, isEmpty: boolean } {
     const { data, page, size } = args
@@ -33,9 +35,24 @@ export const helper = {
     return { result, isLoadAll, isEmpty: data.length == 0 }
   },
   extractHashtags(input: string): string[] {
-    const hashtagRegex = /#[^\s#]*(?:[*?.。]|$)/g;
-    const matches = input.match(hashtagRegex);
-    return matches ? matches : [];
+    const withoutCodeBlocks = (input ?? '').replace(/```[\s\S]*?```/g, '');
+    const out: string[] = [];
+    const trailingPunct = /[,*?.。!！?？;；:："'”’)\]}>\u3001]+$/u;
+    const segRe = /^[\p{L}\p{N}_][\p{L}\p{N}_-]{0,63}$/u;
+
+    for (const match of withoutCodeBlocks.matchAll(/(^|\s)#([^\s#]+)/gu)) {
+      const raw = (match[2] ?? '').trim().replace(trailingPunct, '');
+      if (!raw) continue;
+      if (raw.startsWith('!') || raw.startsWith('/')) continue;
+      if (/^\p{N}+$/u.test(raw) && raw.length < 4) continue;
+
+      const segments = raw.split('/');
+      if (segments.some((s) => !s)) continue;
+      if (segments.some((s) => !segRe.test(s))) continue;
+      out.push(`#${raw}`);
+    }
+
+    return out;
   },
   buildHashTagTreeFromHashString(paths: string[]): TagTreeNode[] {
     const root: TagTreeNode[] = [];

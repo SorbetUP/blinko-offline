@@ -187,10 +187,12 @@ impl TagRepository {
         let mut seen = HashSet::new();
         for name in names.iter() {
             let trimmed = normalize_tag_name(name);
-            if trimmed.is_empty() || seen.contains(&trimmed) {
+            let lowercase_key = trimmed.to_lowercase();  // Case-insensitive comparison
+
+            if trimmed.is_empty() || seen.contains(&lowercase_key) {
                 continue;
             }
-            seen.insert(trimmed.clone());
+            seen.insert(lowercase_key);
             unique.push(trimmed);
         }
 
@@ -291,16 +293,67 @@ impl TagRepository {
 }
 
 pub fn extract_tag_names(content: &str) -> Vec<String> {
+    fn strip_code_fences(input: &str) -> String {
+        // Remove Markdown fenced code blocks (```...```), which often contain `#` tokens that
+        // should not become tags (e.g. shebangs, headings in examples, code comments).
+        let mut out = String::with_capacity(input.len());
+        let mut rest = input;
+        loop {
+            let Some(start) = rest.find("```") else {
+                out.push_str(rest);
+                break;
+            };
+            out.push_str(&rest[..start]);
+            let after = &rest[(start + 3)..];
+            let Some(end) = after.find("```") else {
+                // Unclosed fence: drop the remainder.
+                break;
+            };
+            rest = &after[(end + 3)..];
+        }
+        out
+    }
+
     let mut seen = HashSet::new();
     let mut tags = Vec::new();
-    for token in content.split_whitespace() {
+    let without_code_blocks = strip_code_fences(content);
+    for token in without_code_blocks.split_whitespace() {
         let Some(stripped) = token.strip_prefix('#') else {
             continue;
         };
+        // Be conservative: don't turn shebangs ("#!/usr/bin/env") or path fragments ("#/usr/bin") into tags.
+        // Keep behavior stable across devices by rejecting invalid leading characters instead of trimming them away.
         let cleaned = stripped
-            .trim_end_matches(|c: char| !(c.is_alphanumeric() || c == '_' || c == '-' || c == '/'))
-            .trim_start_matches(|c: char| !(c.is_alphanumeric() || c == '_' || c == '-' || c == '/'));
-        if cleaned.is_empty() {
+            .trim_end_matches(|c: char| !(c.is_alphanumeric() || c == '_' || c == '-' || c == '/'));
+        if cleaned.is_empty() || cleaned.starts_with('!') || cleaned.starts_with('/') {
+            continue;
+        }
+        // Heuristic: ignore short purely-numeric tokens that usually come from "Issue #14" or counters.
+        if cleaned.chars().all(|c| c.is_numeric()) && cleaned.chars().count() < 4 {
+            continue;
+        }
+        // Validate hierarchical segments: each segment must be non-empty and start with an alnum/_.
+        let mut ok = true;
+        for seg in cleaned.split('/') {
+            if seg.is_empty() {
+                ok = false;
+                break;
+            }
+            let mut chars = seg.chars();
+            let Some(first) = chars.next() else {
+                ok = false;
+                break;
+            };
+            if !(first.is_alphanumeric() || first == '_') {
+                ok = false;
+                break;
+            }
+            if !chars.all(|c| c.is_alphanumeric() || c == '_' || c == '-') {
+                ok = false;
+                break;
+            }
+        }
+        if !ok {
             continue;
         }
         let normalized = normalize_tag_name(cleaned);
@@ -313,4 +366,47 @@ pub fn extract_tag_names(content: &str) -> Vec<String> {
 
 fn normalize_tag_name(name: &str) -> String {
     name.trim().trim_start_matches('#').to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::extract_tag_names;
+
+    #[test]
+    fn extract_tag_names_filters_path_shebang_and_short_numeric() {
+        let content = r#"
+hello #alpha #!/usr/bin/env #/usr/bin/env #0 #14 #2024 #Projet/Math #course, #code.
+```sh
+#should_not_be_seen
+```
+"#;
+
+        let tags = extract_tag_names(content);
+
+        assert!(tags.contains(&"alpha".to_string()));
+        assert!(tags.contains(&"2024".to_string()));
+        assert!(tags.contains(&"Projet/Math".to_string()));
+        assert!(tags.contains(&"course".to_string()));
+        assert!(tags.contains(&"code".to_string()));
+
+        assert!(!tags.contains(&"/usr/bin/env".to_string()));
+        assert!(!tags.contains(&"usr/bin/env".to_string()));
+        assert!(!tags.contains(&"0".to_string()));
+        assert!(!tags.contains(&"14".to_string()));
+        assert!(!tags.contains(&"should_not_be_seen".to_string()));
+    }
+
+    #[test]
+    fn extract_tag_names_validates_segments() {
+        let content = "#ok #foo/bar-baz #foo//bar #-nope #nope-/x #nope./x #nope/--bad";
+        let tags = extract_tag_names(content);
+        assert!(tags.contains(&"ok".to_string()));
+        assert!(tags.contains(&"foo/bar-baz".to_string()));
+        assert!(tags.contains(&"nope-/x".to_string()));
+
+        assert!(!tags.contains(&"foo//bar".to_string()));
+        assert!(!tags.contains(&"-nope".to_string()));
+        assert!(!tags.contains(&"nope./x".to_string()));
+        assert!(!tags.contains(&"nope/--bad".to_string()));
+    }
 }

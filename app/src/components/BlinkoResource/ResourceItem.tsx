@@ -1,23 +1,24 @@
 import { Card, Checkbox, Tooltip } from '@heroui/react';
 import { Icon } from '@/components/Common/Iconify/icons';
-import { PhotoProvider, PhotoView } from 'react-photo-view';
-import filesize  from 'filesize';
+import { PhotoView } from 'react-photo-view';
+import filesize from 'filesize';
 import dayjs from '@/lib/dayjs';
 import { FileIcons } from '@/components/Common/AttachmentRender/FileIcon';
-import { memo, useCallback, useMemo, type MouseEvent, type PointerEvent } from 'react';
+import { memo, useCallback, useMemo } from 'react';
 import { Draggable, Droppable } from 'react-beautiful-dnd-next';
 import { useTranslation } from 'react-i18next';
 import { type ResourceType } from '@shared/lib/types';
 import { ResourceContextMenu } from './ResourceContextMenu';
 import { RootStore } from '@/store';
 import { ResourceStore } from '@/store/resourceStore';
-import { _ } from '@/lib/lodash';
 import { observer } from 'mobx-react-lite';
 import { toJS } from 'mobx';
 import { motion } from 'framer-motion';
-import { ImageThumbnailRender } from '../Common/AttachmentRender/imageRender';
+import { ImageThumbnailRender } from '@/components/Common/AttachmentRender/imageRender';
 import { getBlinkoEndpoint } from '@/lib/blinkoEndpoint';
 import { UserStore } from '@/store/user';
+import { isInTauri, openFromLinkInDefaultApp } from '@/lib/tauriHelper';
+import { appendQueryParam } from '@/lib/media/protectedApiImages';
 
 
 // Reusable component for rendering resource preview
@@ -37,10 +38,6 @@ export const ResourceItemPreview = ({
   const { t } = useTranslation();
   const isImage = item.type?.startsWith('image/');
   const isS3File = item.path?.includes('s3file');
-  const stopParentClick = (e: MouseEvent | PointerEvent) => {
-    // Prevent opening/selecting the resource/note when the user just wants to preview the image.
-    e.stopPropagation();
-  };
 
   const fileNameAndExt = useMemo(() => {
     const lastDotIndex = item.name.lastIndexOf('.');
@@ -54,15 +51,12 @@ export const ResourceItemPreview = ({
   }, [item.name]);
 
   return (
-    <div className={`w-full flex items-center gap-2 p-2 rounded-md cursor-pointer group ${className}`} onClick={onClick}>
+    <div
+      className={`w-full flex items-center gap-2 p-2 rounded-md cursor-pointer group ${className}`}
+      onClick={onClick}
+    >
       {isImage ? (
-        <PhotoProvider>
-          <PhotoView src={getBlinkoEndpoint(`${item.path}?token=${RootStore.Get(UserStore).tokenData.value?.token}`)}>
-            <div onClick={stopParentClick} onPointerDown={stopParentClick}>
-              <ImageThumbnailRender src={item.path} className="!w-[28px] !h-[28px] object-cover rounded" />
-            </div>
-          </PhotoView>
-        </PhotoProvider>
+        <ImageThumbnailRender src={item.path} className="!w-[28px] !h-[28px] object-cover rounded" />
       ) : (
         <div className="w-[28px] h-[28px] flex items-center justify-center">
           <FileIcons path={item.path} size={28} />
@@ -100,6 +94,7 @@ interface ResourceItemProps {
   onSelect: (id: number) => void;
   isSelected: boolean;
   onFolderClick: (folderName: string) => void;
+  dndEnabled?: boolean;
 }
 
 interface ResourceCardProps {
@@ -126,7 +121,6 @@ const getCardClassName = (isDragging?: boolean, isDraggingOver?: boolean) => {
 };
 
 const ResourceCard = observer(({ item, isSelected, onSelect, isDragging, isDraggingOver }: ResourceCardProps) => {
-  const { t } = useTranslation();
   const resourceStore = RootStore.Get(ResourceStore);
   const isImage =
     item.type?.startsWith('image/') ||
@@ -149,10 +143,16 @@ const ResourceCard = observer(({ item, isSelected, onSelect, isDragging, isDragg
     };
   }, [item.name]);
 
-  const isS3File = useMemo(() => item.path?.includes('s3file'), [item.path]);
+  const getProtectedFileUrl = (path: string) => {
+    const absolute = getBlinkoEndpoint(path);
+    const token = RootStore.Get(UserStore).tokenData.value?.token;
+    if (!token) return absolute;
+    if (absolute.includes('token=')) return absolute;
+    return appendQueryParam(absolute, 'token', token);
+  };
 
   const handleContextMenu = useCallback(() => {
-    resourceStore.setContextMenuResource(_.cloneDeep(item));
+    resourceStore.setContextMenuResource(item);
   }, [item, resourceStore]);
 
   const cardProps = {
@@ -175,20 +175,37 @@ const ResourceCard = observer(({ item, isSelected, onSelect, isDragging, isDragg
     );
   }
 
+  const handleOpen = () => {
+    if (!item.path) return;
+    // For non-images, open in the system default app (PDF viewer, Office suite, etc.).
+    if (!isImage && isInTauri()) {
+      openFromLinkInDefaultApp(item.path, item.name);
+      return;
+    }
+    // Web: fall back to opening in a new tab.
+    window.open(getBlinkoEndpoint(item.path), '_blank');
+  };
+
   return (
     <Card {...cardProps} shadow="none">
       <div className="flex items-center gap-4">
         <Checkbox isSelected={isSelected} onChange={() => onSelect(item.id!)} className="z-10" />
-        <ResourceItemPreview item={item} />
+        {isImage && item.path ? (
+          <PhotoView src={getProtectedFileUrl(item.path)}>
+            <div className="flex-1 min-w-0 cursor-zoom-in">
+              <ResourceItemPreview item={item} />
+            </div>
+          </PhotoView>
+        ) : (
+          <ResourceItemPreview item={item} onClick={handleOpen} />
+        )}
         <ResourceContextMenu onTrigger={handleContextMenu} />
       </div>
     </Card>
   );
 });
 
-const ResourceItem = observer(({ item, index, onSelect, isSelected, onFolderClick }: ResourceItemProps) => {
-  const { t } = useTranslation();
-
+const ResourceItem = observer(({ item, index, onSelect, isSelected, onFolderClick, dndEnabled = true }: ResourceItemProps) => {
   const handleClick = useMemo(
     () => (e: React.MouseEvent) => {
       if (item.isFolder) {
@@ -202,6 +219,16 @@ const ResourceItem = observer(({ item, index, onSelect, isSelected, onFolderClic
   const draggableId = useMemo(() => (item.isFolder ? `folder-${item.folderName}` : String(item.id)), [item.isFolder, item.folderName, item.id]);
 
   const droppableId = useMemo(() => (item.isFolder ? `folder-${item.folderName}` : undefined), [item.isFolder, item.folderName]);
+
+  if (!dndEnabled) {
+    return (
+      <div className="relative group" onClick={handleClick} style={{ cursor: item.isFolder ? 'pointer' : 'default' }}>
+        <motion.div>
+          <ResourceCard item={item} isSelected={isSelected} onSelect={onSelect} />
+        </motion.div>
+      </div>
+    );
+  }
 
   return (
     <Draggable draggableId={draggableId} index={index} isDragDisabled={item.isFolder}>
@@ -248,7 +275,12 @@ export const MemoizedResourceItem = memo(ResourceItem, (prevProps, nextProps) =>
   const nextItem = toJS(nextProps.item);
 
   if (prevItem.isFolder && nextItem.isFolder) {
-    return prevItem.folderName === nextItem.folderName && prevProps.isSelected === nextProps.isSelected && prevProps.index === nextProps.index;
+    return (
+      prevItem.folderName === nextItem.folderName &&
+      prevProps.isSelected === nextProps.isSelected &&
+      prevProps.index === nextProps.index &&
+      prevProps.dndEnabled === nextProps.dndEnabled
+    );
   }
 
   return (
@@ -257,6 +289,7 @@ export const MemoizedResourceItem = memo(ResourceItem, (prevProps, nextProps) =>
     prevItem.path === nextItem.path &&
     prevItem.size === nextItem.size &&
     prevProps.isSelected === nextProps.isSelected &&
-    prevProps.index === nextProps.index
+    prevProps.index === nextProps.index &&
+    prevProps.dndEnabled === nextProps.dndEnabled
   );
 });

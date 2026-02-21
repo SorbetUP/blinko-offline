@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { FileIcons } from './FileIcon';
 import { observer } from 'mobx-react-lite';
 import { helper } from '@/lib/helper';
@@ -13,10 +13,13 @@ import { BlinkoCard } from '@/components/BlinkoCard';
 import { EditorStore } from '../Editor/editorStore';
 import { DraggableFileGrid } from './DraggableFileGrid';
 import { AudioRender } from './audioRender';
-import { downloadFromLink } from '@/lib/tauriHelper';
 import { getBlinkoEndpoint } from '@/lib/blinkoEndpoint';
 import { RootStore } from '@/store';
 import { UserStore } from '@/store/user';
+import { openFromLinkInDefaultApp } from '@/lib/tauriHelper';
+import { useTranslation } from 'react-i18next';
+import { eventBus } from '@/lib/event';
+import { extractApiFileRefsFromMarkdown } from '@/lib/markdown/extractApiFileAttachments';
 
 //https://www.npmjs.com/package/browser-thumbnail-generator
 
@@ -25,10 +28,63 @@ type IProps = {
   preview?: boolean
   columns?: number
   onReorder?: (newFiles: FileType[]) => void
+  noteId?: number
+  noteContent?: string
+  noteAttachments?: Attachment[]
 }
 
 const AttachmentsRender = observer((props: IProps) => {
-  const { files, preview = false, columns = 3 } = props
+  const { files, preview = false, columns = 3, noteContent, noteId } = props
+  const { t } = useTranslation()
+  const [showUsed, setShowUsed] = useState(false);
+
+  useEffect(() => {
+    if (!noteId) return;
+
+    const handler = (payload: any) => {
+      if (!payload || payload.noteId !== noteId) return;
+      if (typeof payload.showUsed !== 'boolean') return;
+      setShowUsed(payload.showUsed);
+    };
+
+    eventBus.on('attachments:setShowUsed', handler);
+    return () => {
+      eventBus.off('attachments:setShowUsed', handler);
+    };
+  }, [noteId]);
+
+  const usedFileNames = useMemo(() => {
+    const out = new Set<string>();
+    const content = noteContent ?? '';
+    if (!content) return out;
+    const usedRefs = extractApiFileRefsFromMarkdown(content);
+    const usedIds = new Set(usedRefs.map(ref => ref.id));
+
+    for (const f of files ?? []) {
+      const candidates = [(f as any)?.uploadPromise?.value, (f as any)?.preview]
+        .filter((x) => typeof x === 'string' && x.length > 0) as string[];
+      const stable = candidates.filter((x) => !x.startsWith('blob:') && !x.startsWith('data:'));
+      if (stable.length === 0) continue;
+
+      // The editor typically stores relative `/api/...` paths, but be defensive and also match the absolute endpoint form.
+      const matchesByText = stable.some((raw) => content.includes(raw) || content.includes(getBlinkoEndpoint(raw)));
+      const matchesById = stable.some((raw) => {
+        const id = raw.match(/\/api\/file\/(\d+)\b/)?.[1];
+        return id ? usedIds.has(id) : false;
+      });
+      const matches = matchesByText || matchesById;
+      if (matches && typeof f?.name === 'string') out.add(f.name);
+    }
+    return out;
+  }, [files, noteContent]);
+
+  const hiddenFileNames = useMemo(() => {
+    if (showUsed) return new Set<string>();
+    return usedFileNames;
+  }, [showUsed, usedFileNames]);
+
+  const hiddenCount = usedFileNames.size;
+  const dragDisabled = hiddenFileNames.size > 0;
 
   const gridClassName = preview 
     ? `grid grid-cols-${(columns - 1) < 1 ? 1 : (columns - 1)} md:grid-cols-${columns} gap-2` 
@@ -36,12 +92,32 @@ const AttachmentsRender = observer((props: IProps) => {
 
   return (
     <div className={`flex flex-col ${files.length == 0 ? 'gap-[2px]' : 'gap-[4px]'}`}>
+      {/* In preview (note card), the toggle is rendered in the card footer next to "Blinko". */}
+      {hiddenCount > 0 && (!preview || !noteId) && (
+        <div className="flex items-center gap-2 text-xs opacity-70">
+          <button
+            type="button"
+            className="underline hover:opacity-100"
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowUsed((v) => !v);
+            }}
+          >
+            {showUsed
+              ? t('hide-used-attachments', { count: hiddenCount })
+              : t('show-used-attachments', { count: hiddenCount })}
+          </button>
+        </div>
+      )}
+
       {/* image render */}
-      <ImageRender {...props} />
+      <ImageRender {...props} hiddenFileNames={hiddenFileNames} dragDisabled={dragDisabled} />
 
       {/* video render  */}
       <div className="columns-1 md:columns-1">
-        {files?.filter(i => i.previewType == 'video').map((file, index) => {
+        {files
+          ?.filter((i) => i.previewType === 'video' && !hiddenFileNames.has(i.name))
+          .map((file, index) => {
           // Add token to video URL for authentication
           let videoUrl = getBlinkoEndpoint(file.preview);
           const token = RootStore.Get(UserStore).tokenData?.value?.token;
@@ -72,12 +148,13 @@ const AttachmentsRender = observer((props: IProps) => {
       </div>
 
       {/* audio render */}
-      <AudioRender files={files} preview={preview} />
+      <AudioRender files={files} preview={preview} hiddenFileNames={hiddenFileNames} />
 
       {/* other file render */}
       <DraggableFileGrid
-        files={files}
+        files={files.filter((f) => f.previewType !== 'other' || !hiddenFileNames.has(f.name))}
         preview={preview}
+        dragDisabled={dragDisabled}
         type="other"
         className={gridClassName}
         onReorder={props.onReorder}
@@ -86,9 +163,11 @@ const AttachmentsRender = observer((props: IProps) => {
             className={`relative mt-2 flex p-2 items-center gap-2 cursor-pointer 
               bg-secondbackground hover:bg-hover !transition-all rounded-md group
               ${!preview ? 'min-w-[200px] flex-shrink-0' : 'w-full'}`}
-            onClick={() => {
+            onClick={(e) => {
+              e.stopPropagation();
               if (preview) {
-                downloadFromLink(getBlinkoEndpoint(file.uploadPromise.value))
+                const uri = file.uploadPromise.value || file.preview;
+                openFromLinkInDefaultApp(uri, file.name);
               }
             }}
           >
@@ -108,12 +187,18 @@ const FilesAttachmentRender = observer(({
   files,
   preview,
   columns,
-  onReorder
+  onReorder,
+  noteId,
+  noteContent,
+  noteAttachments
 }: {
   files: Attachment[],
   preview?: boolean,
   columns?: number,
-  onReorder?: (newFiles: Attachment[]) => void
+  onReorder?: (newFiles: Attachment[]) => void,
+  noteId?: number,
+  noteContent?: string,
+  noteAttachments?: Attachment[]
 }) => {
   const [handledFiles, setFiles] = useState<FileType[]>([]);
 
@@ -136,6 +221,9 @@ const FilesAttachmentRender = observer(({
       preview={preview}
       columns={columns}
       onReorder={handleReorder}
+      noteId={noteId}
+      noteContent={noteContent}
+      noteAttachments={noteAttachments}
     />
   );
 });
@@ -171,4 +259,3 @@ const ReferenceRender = observer(({ store }: { store: EditorStore }) => {
 })
 
 export { AttachmentsRender, FilesAttachmentRender, ReferenceRender }
-

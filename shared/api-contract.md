@@ -55,6 +55,26 @@ Aliases:
 - `GET /sync/settings`
 - `PUT /sync/settings`
 - `POST /sync/now`
+- `GET /sync/conflicts?limit=&offset=`
+- `GET /sync/conflicts/:id`
+- `POST /sync/conflicts/:id/resolve`
+
+#### `GET /sync/settings`
+- Response:
+  - `mode: "local" | "remote" | "sync"` *(dérivé; l’UI ne pilote plus ce champ)*
+  - `remote_endpoints: Array<{ id: string; url: string; token?: string | null; last_sync_at?: string | null }>`
+  - `allow_insecure_http: boolean`
+  - `sync_auto: boolean`
+  - `sync_interval_secs: number`
+
+#### `PUT /sync/settings`
+- Request (tous champs optionnels):
+  - `remote_endpoints?: Array<{ id: string; url: string; token?: string | null }>`
+  - `allow_insecure_http?: boolean`
+  - `sync_auto?: boolean`
+  - `sync_interval_secs?: number`
+  - `mode?: "local" | "remote" | "sync"` *(deprecated; ignoré/écrasé par le calcul implicite)*
+- Response: même payload que `GET /sync/settings`
 
 ### tRPC (local compatibility)
 - `POST/GET /api/trpc/<procedure>`

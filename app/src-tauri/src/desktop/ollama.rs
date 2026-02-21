@@ -107,7 +107,11 @@ fn ollama_dir(app: &AppHandle) -> Result<PathBuf, String> {
 
 fn managed_bin_path(app: &AppHandle) -> Result<PathBuf, String> {
     let dir = ollama_dir(app)?;
-    let bin = if cfg!(windows) { "ollama.exe" } else { "ollama" };
+    let bin = if cfg!(windows) {
+        "ollama.exe"
+    } else {
+        "ollama"
+    };
     Ok(dir.join(bin))
 }
 
@@ -172,7 +176,10 @@ async fn download_to_file(url: &str, dest: &Path, app: Option<&AppHandle>) -> Re
         .await
         .map_err(|e| format!("Failed to download {url}: {e}"))?;
     if !resp.status().is_success() {
-        return Err(format!("Download returned status {} for {url}", resp.status()));
+        return Err(format!(
+            "Download returned status {} for {url}",
+            resp.status()
+        ));
     }
 
     if let Some(parent) = dest.parent() {
@@ -225,10 +232,7 @@ async fn parse_sha256sums(url: &str) -> Result<HashMap<String, String>, String> 
         .await
         .map_err(|e| format!("Failed to download sha256sums: {e}"))?;
     if !resp.status().is_success() {
-        return Err(format!(
-            "SHA256SUMS returned status {}",
-            resp.status()
-        ));
+        return Err(format!("SHA256SUMS returned status {}", resp.status()));
     }
     let text = resp
         .text()
@@ -285,14 +289,22 @@ fn pick_managed_asset(release: &GithubRelease) -> Option<GithubReleaseAsset> {
 
     // Prefer exact names if present.
     if cfg!(target_os = "macos") {
-        if let Some(a) = candidates.iter().find(|a| a.name == "ollama-darwin.tgz").cloned() {
+        if let Some(a) = candidates
+            .iter()
+            .find(|a| a.name == "ollama-darwin.tgz")
+            .cloned()
+        {
             return Some(a);
         }
     }
     candidates.into_iter().next()
 }
 
-async fn extract_tgz_find_bin(tgz_path: &Path, out_dir: &Path, bin_name: &str) -> Result<PathBuf, String> {
+async fn extract_tgz_find_bin(
+    tgz_path: &Path,
+    out_dir: &Path,
+    bin_name: &str,
+) -> Result<PathBuf, String> {
     let tgz_path = tgz_path.to_path_buf();
     let out_dir = out_dir.to_path_buf();
     let bin_name = bin_name.to_string();
@@ -306,7 +318,10 @@ async fn extract_tgz_find_bin(tgz_path: &Path, out_dir: &Path, bin_name: &str) -
         let gz = flate2::read::GzDecoder::new(file);
         let mut archive = tar::Archive::new(gz);
 
-        for entry in archive.entries().map_err(|e| format!("Failed reading archive entries: {e}"))? {
+        for entry in archive
+            .entries()
+            .map_err(|e| format!("Failed reading archive entries: {e}"))?
+        {
             let mut entry = entry.map_err(|e| format!("Failed reading archive entry: {e}"))?;
             let path = entry
                 .path()
@@ -328,7 +343,11 @@ async fn extract_tgz_find_bin(tgz_path: &Path, out_dir: &Path, bin_name: &str) -
     .map_err(|e| format!("Extract task failed: {e}"))?
 }
 
-async fn extract_zip_find_bin(zip_path: &Path, out_dir: &Path, bin_name: &str) -> Result<PathBuf, String> {
+async fn extract_zip_find_bin(
+    zip_path: &Path,
+    out_dir: &Path,
+    bin_name: &str,
+) -> Result<PathBuf, String> {
     let zip_path = zip_path.to_path_buf();
     let out_dir = out_dir.to_path_buf();
     let bin_name = bin_name.to_string();
@@ -372,7 +391,11 @@ async fn resolve_bin(app: &AppHandle) -> Result<Option<PathBuf>, String> {
         return Ok(Some(managed));
     }
 
-    let exe = if cfg!(windows) { "ollama.exe" } else { "ollama" };
+    let exe = if cfg!(windows) {
+        "ollama.exe"
+    } else {
+        "ollama"
+    };
     if let Some(paths) = std::env::var_os("PATH") {
         for p in std::env::split_paths(&paths) {
             let candidate = p.join(exe);
@@ -419,7 +442,9 @@ async fn probe_server_version(endpoint: &str) -> Option<String> {
         return None;
     }
     let v = resp.json::<serde_json::Value>().await.ok()?;
-    v.get("version").and_then(|v| v.as_str()).map(|s| s.to_string())
+    v.get("version")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
 }
 
 async fn wait_ready(endpoint: &str, timeout: Duration) -> Result<Option<String>, String> {
@@ -526,7 +551,12 @@ pub async fn ollama_install_managed(app: AppHandle) -> Result<OllamaStatus, Stri
     };
 
     let tmp_path = out_dir.join(format!("{}.download", asset.name));
-    emit_install_progress(&app, "download", &format!("Downloading {}...", asset.name), Some(0));
+    emit_install_progress(
+        &app,
+        "download",
+        &format!("Downloading {}...", asset.name),
+        Some(0),
+    );
     download_to_file(&asset.browser_download_url, &tmp_path, Some(&app)).await?;
 
     if let Some(expected) = expected_sha {
@@ -545,7 +575,11 @@ pub async fn ollama_install_managed(app: AppHandle) -> Result<OllamaStatus, Stri
     if extract_dir.exists() {
         let _ = tokio::fs::remove_dir_all(&extract_dir).await;
     }
-    let bin_name = if cfg!(windows) { "ollama.exe" } else { "ollama" };
+    let bin_name = if cfg!(windows) {
+        "ollama.exe"
+    } else {
+        "ollama"
+    };
     let extracted = if asset.name.to_lowercase().ends_with(".zip") {
         extract_zip_find_bin(&tmp_path, &extract_dir, bin_name).await?
     } else {
@@ -728,7 +762,10 @@ pub async fn ollama_list_models(endpoint: Option<String>) -> Result<Vec<OllamaMo
         .await
         .map_err(|e| format!("Failed to query tags: {e}"))?;
     if !resp.status().is_success() {
-        return Err(format!("Ollama /api/tags returned status {}", resp.status()));
+        return Err(format!(
+            "Ollama /api/tags returned status {}",
+            resp.status()
+        ));
     }
     let v = resp
         .json::<serde_json::Value>()
@@ -741,14 +778,21 @@ pub async fn ollama_list_models(endpoint: Option<String>) -> Result<Vec<OllamaMo
         .unwrap_or_default();
     let mut out = Vec::new();
     for m in models {
-        let name = m.get("name").and_then(|n| n.as_str()).unwrap_or("").to_string();
+        let name = m
+            .get("name")
+            .and_then(|n| n.as_str())
+            .unwrap_or("")
+            .to_string();
         if name.is_empty() {
             continue;
         }
         out.push(OllamaModelInfo {
             name,
             size: m.get("size").and_then(|s| s.as_u64()),
-            modified_at: m.get("modified_at").and_then(|s| s.as_str()).map(|s| s.to_string()),
+            modified_at: m
+                .get("modified_at")
+                .and_then(|s| s.as_str())
+                .map(|s| s.to_string()),
         });
     }
     Ok(out)
@@ -776,15 +820,30 @@ mod tests {
     #[test]
     fn normalize_endpoint_strips_spaces_and_invisibles() {
         assert_eq!(normalize_endpoint(""), "http://127.0.0.1:11434");
-        assert_eq!(normalize_endpoint("  http://localhost:11434  "), "http://localhost:11434");
-        assert_eq!(normalize_endpoint("http:// localhost:11434"), "http://localhost:11434");
+        assert_eq!(
+            normalize_endpoint("  http://localhost:11434  "),
+            "http://localhost:11434"
+        );
+        assert_eq!(
+            normalize_endpoint("http:// localhost:11434"),
+            "http://localhost:11434"
+        );
         assert_eq!(
             normalize_endpoint("http://\u{200B}localhost:11434"),
             "http://localhost:11434"
         );
-        assert_eq!(normalize_endpoint("localhost:11434"), "http://localhost:11434");
-        assert_eq!(normalize_endpoint("127.0.0.1:11434/"), "http://127.0.0.1:11434");
-        assert_eq!(normalize_endpoint("https://localhost:11434/"), "https://localhost:11434");
+        assert_eq!(
+            normalize_endpoint("localhost:11434"),
+            "http://localhost:11434"
+        );
+        assert_eq!(
+            normalize_endpoint("127.0.0.1:11434/"),
+            "http://127.0.0.1:11434"
+        );
+        assert_eq!(
+            normalize_endpoint("https://localhost:11434/"),
+            "https://localhost:11434"
+        );
     }
 }
 
@@ -835,10 +894,16 @@ pub async fn ollama_pull_model(
                 continue;
             }
             if let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) {
-                let status = v.get("status").and_then(|s| s.as_str()).map(|s| s.to_string());
+                let status = v
+                    .get("status")
+                    .and_then(|s| s.as_str())
+                    .map(|s| s.to_string());
                 let completed = v.get("completed").and_then(|n| n.as_u64());
                 let total = v.get("total").and_then(|n| n.as_u64());
-                let digest = v.get("digest").and_then(|s| s.as_str()).map(|s| s.to_string());
+                let digest = v
+                    .get("digest")
+                    .and_then(|s| s.as_str())
+                    .map(|s| s.to_string());
                 let done = v.get("done").and_then(|b| b.as_bool()).unwrap_or(false);
                 emit_pull_progress(
                     &app,

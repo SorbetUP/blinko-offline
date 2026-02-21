@@ -5,11 +5,45 @@ import { LinkInfo } from '@shared/lib/types';
 import { RootStore } from '@/store';
 import { StorageState } from '@/store/standard/StorageState';
 import { observer } from 'mobx-react-lite';
+import { isInTauri, openFromLinkInDefaultApp } from '@/lib/tauriHelper';
+
+const DOCUMENT_EXTENSIONS = new Set([
+  'pdf',
+  'doc', 'docx',
+  'xls', 'xlsx',
+  'ppt', 'pptx',
+  'odt', 'ods', 'odp',
+  'rtf',
+  'txt',
+  'csv',
+]);
+
+function isDocumentHref(href: string): boolean {
+  try {
+    const url = new URL(href, window.location.origin);
+    const last = (url.pathname.split('/').pop() || '').toLowerCase();
+    const dot = last.lastIndexOf('.');
+    if (dot < 0) return false;
+    const ext = last.slice(dot + 1);
+    return DOCUMENT_EXTENSIONS.has(ext);
+  } catch {
+    const clean = (href || '').split('#')[0].split('?')[0].toLowerCase();
+    const last = clean.split('/').pop() || '';
+    const dot = last.lastIndexOf('.');
+    if (dot < 0) return false;
+    const ext = last.slice(dot + 1);
+    return DOCUMENT_EXTENSIONS.has(ext);
+  }
+}
 
 interface LinkPreviewProps {
   href: string;
   text: any;
   isBlock?: boolean;
+}
+
+function isEphemeralBlobHref(href: string): boolean {
+  return (href || '').trim().toLowerCase().startsWith('blob:');
 }
 
 export const LinkPreview = observer(({ href, text, isBlock = false }: LinkPreviewProps) => {
@@ -19,6 +53,7 @@ export const LinkPreview = observer(({ href, text, isBlock = false }: LinkPrevie
   
   const [isOpen, setIsOpen] = useState(false);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const isBlobHref = isEphemeralBlobHref(href);
 
   const handleMouseEnter = () => {
     if (timeoutRef.current) {
@@ -46,13 +81,23 @@ export const LinkPreview = observer(({ href, text, isBlock = false }: LinkPrevie
       }
     };
     // Only fetch if it's a block or popover is open (to save resources)
-    if (isBlock || isOpen) {
+    if (!isBlobHref && (isBlock || isOpen)) {
       fetchData();
     }
   }, [href, isBlock, isOpen]);
 
   const handleCardClick = (e: React.MouseEvent) => {
     e.stopPropagation();
+    if (isBlobHref) {
+      // `blob:` links are ephemeral (session-bound). Opening them can navigate away from the app
+      // and strand the user on a blank/broken viewer page in Tauri/WebView.
+      e.preventDefault();
+      return;
+    }
+    if (isInTauri() && isDocumentHref(href)) {
+      openFromLinkInDefaultApp(href);
+      return;
+    }
     window.open(href, '_blank');
   };
 
@@ -81,10 +126,37 @@ export const LinkPreview = observer(({ href, text, isBlock = false }: LinkPrevie
     );
   };
 
+  if (isBlobHref) {
+    return (
+      <span
+        className="text-desc underline decoration-dotted cursor-not-allowed"
+        title="Temporary link (blob:) is not supported. Re-insert the attachment after upload."
+        onClick={(e) => {
+          e.stopPropagation();
+          e.preventDefault();
+        }}
+      >
+        {text}
+      </span>
+    );
+  }
+
   if (isBlock) {
     return (
       <div className="link-preview-block w-full my-2">
-        <a href={href} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline block mb-1 truncate">
+        <a
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-primary hover:underline block mb-1 truncate"
+          onClick={(e) => {
+            e.stopPropagation();
+            if (isInTauri() && isDocumentHref(href)) {
+              e.preventDefault();
+              openFromLinkInDefaultApp(href);
+            }
+          }}
+        >
           {text}
         </a>
         <PreviewCard />
@@ -105,7 +177,13 @@ export const LinkPreview = observer(({ href, text, isBlock = false }: LinkPrevie
           target="_blank" 
           rel="noopener noreferrer" 
           className="text-primary hover:underline inline-block cursor-pointer"
-          onClick={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (isInTauri() && isDocumentHref(href)) {
+              e.preventDefault();
+              openFromLinkInDefaultApp(href);
+            }
+          }}
           onMouseEnter={handleMouseEnter}
           onMouseLeave={handleMouseLeave}
         >

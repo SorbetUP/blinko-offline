@@ -102,6 +102,9 @@ const App = observer(() => {
             }}
             onSlideChange={(swiper) => store.handleSlideChange(swiper)}
             effect={"cards"}
+            cardsEffect={{
+              slideShadows: false,
+            }}
             grabCursor={true}
             modules={[EffectCards, Virtual]}
             className="mt-5 md:mt-4 w-[300px] h-[calc(100vh_-_300px)] md:w-[550px] "
@@ -122,7 +125,7 @@ const App = observer(() => {
             {
               reviewNotes.map((i, index) => (
                 <SwiperSlide key={i.id} virtualIndex={index} data-id={i.id} className='bg-background shadow-lg p-4 w-full overflow-hidden h-full'>
-                  <div className='bg-background p-0 w-full overflow-y-scroll h-full'>
+                  <div className='review-card-scroll bg-background p-0 w-full h-full'>
                     <div className='flex items-center gap-2 mb-2'>
                       <div className='text-xs text-desc'>{dayjs(i.createdAt).fromNow()}</div>
                       {

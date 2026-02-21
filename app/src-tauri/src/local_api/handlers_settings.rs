@@ -46,7 +46,7 @@ pub async fn update_setting(
                 )
                 .await;
             let outbox = OutboxRepository::new(state.data_state.db.pool.clone());
-            let _ = outbox
+            let appended = outbox
                 .append(
                     "setting",
                     &setting.key,
@@ -55,6 +55,9 @@ pub async fn update_setting(
                     &state.device_id,
                 )
                 .await;
+            if appended.is_ok() {
+                crate::sync::scheduler::request_sync_soon();
+            }
             (StatusCode::OK, Json(setting)).into_response()
         }
         Err(err) => (

@@ -86,6 +86,14 @@ model notes {
   shareMaxView      Int?            @default(0)
   shareViewCount    Int?            @default(0)
   metadata          Json?           @db.Json
+  // Sync-mode metadata for mapping local `sync_id` <-> server notes and LWW conflict resolution.
+  // Kept separate from `updatedAt` because Prisma will auto-touch `updatedAt` on updates.
+  syncId            String?         @db.VarChar
+  syncRev           Int             @default(0)
+  syncDeviceId      String          @default("") @db.VarChar
+  syncCreatedAt     DateTime?       @db.Timestamptz(6)
+  syncUpdatedAt     DateTime?       @db.Timestamptz(6)
+  syncDeletedAt     DateTime?       @db.Timestamptz(6)
   accountId         Int?
   sortOrder         Int             @default(0)
   createdAt         DateTime        @default(now()) @db.Timestamptz(6)
@@ -98,6 +106,9 @@ model notes {
   comments          comments[]      @relation("NoteComments")
   histories         noteHistory[]
   internalShares    noteInternalShare[]
+
+  @@index([accountId, syncId])
+  @@unique([accountId, syncId])
 }
 
 model comments {

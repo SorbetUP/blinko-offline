@@ -163,6 +163,8 @@ pub async fn note_upsert(
                     is_share: input.is_share.unwrap_or(false),
                     is_top: input.is_top.unwrap_or(false),
                     note_type: input.note_type.unwrap_or(0),
+                    created_at: None,
+                    updated_at: None,
                 },
                 &device_id,
             )
@@ -181,6 +183,8 @@ pub async fn note_upsert(
             is_share: input.is_share.unwrap_or(existing.is_share),
             is_top: input.is_top.unwrap_or(existing.is_top),
             note_type: input.note_type.unwrap_or(existing.note_type),
+            created_at: None,
+            updated_at: None,
         };
         note_repo
             .update_note(id, payload, &device_id)
@@ -296,4 +300,25 @@ fn attachment_to_value(att: &crate::local_db::attachments::Attachment) -> Value 
         "createdAt": att.created_at.to_rfc3339(),
         "updatedAt": att.updated_at.to_rfc3339()
     })
+}
+
+/// Get auto-generated local credentials for automatic login after DB reset
+#[tauri::command]
+pub async fn get_local_credentials(
+    state: tauri::State<'_, LocalDataState>,
+) -> Result<Option<(String, String)>, String> {
+    use crate::local_db::settings::SettingsRepository;
+
+    let repo = SettingsRepository::new(state.db.pool.clone());
+
+    // Retrieve stored default credentials from settings
+    let username_setting = repo.get("default_username").await
+        .map_err(|e| format!("Failed to get username: {}", e))?;
+    let password_setting = repo.get("default_password").await
+        .map_err(|e| format!("Failed to get password: {}", e))?;
+
+    match (username_setting, password_setting) {
+        (Some(u), Some(p)) => Ok(Some((u.value, p.value))),
+        _ => Ok(None),
+    }
 }

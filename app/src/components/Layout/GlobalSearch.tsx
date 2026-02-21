@@ -79,6 +79,7 @@ export const GlobalSearch = observer(({ isOpen, onOpenChange }: GlobalSearchProp
     searchQuery: '',
     isAiQuestion: false,
     isSearching: false,
+    selectedKey: null as string | null,
     searchResults: {
       notes: [] as Note[],
       resources: [] as ResourceType[],
@@ -89,6 +90,8 @@ export const GlobalSearch = observer(({ isOpen, onOpenChange }: GlobalSearchProp
     // Methods
     setSearchQuery(value: string) {
       this.searchQuery = value;
+      // Reset selection on each keystroke; debounced search will re-select the first result.
+      this.selectedKey = null;
 
       // Auto-detect @AI syntax
       if (value.startsWith('@') && !this.isAiQuestion) {
@@ -122,6 +125,64 @@ export const GlobalSearch = observer(({ isOpen, onOpenChange }: GlobalSearchProp
       this.searchQuery = this.isAiQuestion ? '@' + this.searchQuery.replace('#', '') : this.searchQuery.replace('@', '');
       if (searchInputRef.current) {
         searchInputRef.current.focus();
+      }
+    },
+
+    resultKeys(): string[] {
+      const keys: string[] = [];
+      this.searchResults.notes.forEach((n) => keys.push(`note:${n.id}`));
+      this.searchResults.resources.forEach((r) => keys.push(`resource:${r.id}`));
+      this.searchResults.settings.forEach((s: any) => keys.push(`setting:${s.key}`));
+      this.searchResults.tags.forEach((t) => keys.push(`tag:${t.name}`));
+      return keys;
+    },
+
+    selectFirstResultIfAny() {
+      if (this.selectedKey) return;
+      const keys = this.resultKeys();
+      if (keys.length > 0) {
+        this.selectedKey = keys[0];
+      }
+    },
+
+    selectNext(delta: 1 | -1) {
+      const keys = this.resultKeys();
+      if (keys.length === 0) return;
+      if (!this.selectedKey) {
+        this.selectedKey = keys[0];
+        return;
+      }
+      const idx = keys.indexOf(this.selectedKey);
+      const nextIdx = idx === -1 ? 0 : (idx + delta + keys.length) % keys.length;
+      this.selectedKey = keys[nextIdx];
+    },
+
+    resolveSelected(): { kind: string; value: any } | null {
+      const key = this.selectedKey;
+      if (!key) return null;
+      const [kind, raw] = key.split(':');
+      if (!kind || raw == null) return null;
+      switch (kind) {
+        case 'note': {
+          const id = Number(raw);
+          const note = this.searchResults.notes.find((n) => n.id === id);
+          return note ? { kind, value: note } : null;
+        }
+        case 'resource': {
+          const id = Number(raw);
+          const resource = this.searchResults.resources.find((r) => r.id === id);
+          return resource ? { kind, value: resource } : null;
+        }
+        case 'setting': {
+          const setting = this.searchResults.settings.find((s: any) => s.key === raw);
+          return setting ? { kind, value: setting } : null;
+        }
+        case 'tag': {
+          const tag = this.searchResults.tags.find((t) => t.name === raw);
+          return tag ? { kind, value: tag } : null;
+        }
+        default:
+          return null;
       }
     },
 
@@ -224,6 +285,9 @@ export const GlobalSearch = observer(({ isOpen, onOpenChange }: GlobalSearchProp
           tags: [],
         };
 
+        // Desktop keyboard UX: preselect the first result so Enter can select.
+        store.selectFirstResultIfAny();
+
         blinkoStore.forceQuery++
       } catch (error) {
         console.error('Search error:', error);
@@ -239,8 +303,31 @@ export const GlobalSearch = observer(({ isOpen, onOpenChange }: GlobalSearchProp
       if (store.isAiQuestion) {
         handleAiQuestion();
       } else {
-        onOpenChange(false);
+        // Desktop keyboard UX: Enter selects the highlighted result (or first result).
+        store.selectFirstResultIfAny();
+        const selected = store.resolveSelected();
+        if (!selected) {
+          onOpenChange(false);
+          return;
+        }
+        if (selected.kind === 'note') {
+          navigateToNote(selected.value as Note);
+        } else if (selected.kind === 'resource') {
+          navigateToResource(selected.value as ResourceType);
+        } else if (selected.kind === 'setting') {
+          navigateToSetting((selected.value as any).key);
+        } else if (selected.kind === 'tag') {
+          navigateToTag((selected.value as Tag).name);
+        } else {
+          onOpenChange(false);
+        }
       }
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      store.selectNext(1);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      store.selectNext(-1);
     } else if (e.key === 'Escape') {
       onOpenChange(false);
     }
@@ -283,7 +370,17 @@ export const GlobalSearch = observer(({ isOpen, onOpenChange }: GlobalSearchProp
 
   // Render search result items
   const renderNoteItem = (note: Note) => (
-    <div key={note.id} className="flex gap-2 items-center p-2 hover:bg-default-100 rounded-md transition-colors">
+    <div
+      key={note.id}
+      data-search-key={`note:${note.id}`}
+      className={cn(
+        "flex gap-2 items-center p-2 hover:bg-default-100 rounded-md transition-colors",
+        store.selectedKey === `note:${note.id}` && "bg-default-100 ring-1 ring-primary/20"
+      )}
+      onMouseEnter={() => {
+        store.selectedKey = `note:${note.id}`;
+      }}
+    >
       <div
         className="text-xs truncate w-full md:w-[80%] cursor-pointer"
         onClick={() => navigateToNote(note)}
@@ -313,13 +410,35 @@ export const GlobalSearch = observer(({ isOpen, onOpenChange }: GlobalSearchProp
   );
 
   const renderResourceItem = (resource: ResourceType) => (
-    <div key={resource.id} className="hover:bg-default-100 rounded-md cursor-pointer transition-colors" onClick={() => navigateToResource(resource)}>
+    <div
+      key={resource.id}
+      data-search-key={`resource:${resource.id}`}
+      className={cn(
+        "hover:bg-default-100 rounded-md cursor-pointer transition-colors",
+        store.selectedKey === `resource:${resource.id}` && "bg-default-100 ring-1 ring-primary/20"
+      )}
+      onClick={() => navigateToResource(resource)}
+      onMouseEnter={() => {
+        store.selectedKey = `resource:${resource.id}`;
+      }}
+    >
       <ResourceItemPreview item={resource} onClick={() => navigateToResource(resource)} showExtraInfo={true} showAssociationIcon={true} className="hover:bg-transparent" />
     </div>
   );
 
   const renderSettingItem = (setting: any) => (
-    <div key={setting.key} className="flex gap-2 items-center p-2 hover:bg-default-100 rounded-md cursor-pointer transition-colors" onClick={() => navigateToSetting(setting.key)}>
+    <div
+      key={setting.key}
+      data-search-key={`setting:${setting.key}`}
+      className={cn(
+        "flex gap-2 items-center p-2 hover:bg-default-100 rounded-md cursor-pointer transition-colors",
+        store.selectedKey === `setting:${setting.key}` && "bg-default-100 ring-1 ring-primary/20"
+      )}
+      onClick={() => navigateToSetting(setting.key)}
+      onMouseEnter={() => {
+        store.selectedKey = `setting:${setting.key}`;
+      }}
+    >
       <div className="p-2 rounded-md bg-warning-50">
         <Icon icon={setting.icon} className="text-warning" />
       </div>
@@ -332,7 +451,18 @@ export const GlobalSearch = observer(({ isOpen, onOpenChange }: GlobalSearchProp
 
   // Render tag item
   const renderTagItem = (tag: Tag) => (
-    <div key={tag.id} className="flex gap-2 items-center p-2 hover:bg-default-100 rounded-md cursor-pointer transition-colors" onClick={() => navigateToTag(tag.name)}>
+    <div
+      key={tag.id}
+      data-search-key={`tag:${tag.name}`}
+      className={cn(
+        "flex gap-2 items-center p-2 hover:bg-default-100 rounded-md cursor-pointer transition-colors",
+        store.selectedKey === `tag:${tag.name}` && "bg-default-100 ring-1 ring-primary/20"
+      )}
+      onClick={() => navigateToTag(tag.name)}
+      onMouseEnter={() => {
+        store.selectedKey = `tag:${tag.name}`;
+      }}
+    >
       <div className="text-xs flex items-center gap-2">
         <span className="text-primary">#{tag.name}</span>
       </div>

@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from "react";
 import { helper } from "./helper";
 import { BlinkoStore } from "@/store/blinkoStore";
 import { RootStore } from "@/store";
-import { isAndroid, isInTauri } from '@/lib/tauriHelper';
+import { isAndroid, isInTauri, isIOS } from '@/lib/tauriHelper';
 import { ShowEditBlinkoModel } from '@/components/BlinkoRightClickMenu';
 import { eventBus } from '@/lib/event';
 
@@ -230,15 +230,14 @@ const initializeAndroidShortcuts = () => {
             isProcessingSharedData = false;
           }
           else if (shareData.stream && shareData.content_type) {
-            readFile(shareData.stream).then(contents => {
-              const file = new File([contents], shareData.name || 'shared_file', {
-                type: shareData.content_type
-              });
-              console.log('xxx!!!')
-              ShowEditBlinkoModel('2xl', 'create', { file });
-              isProcessingSharedData = false;
-            }).catch((error: Error) => {
-              console.warn('fetching shared content failed:', error);
+              readFile(shareData.stream).then(contents => {
+                const file = new File([contents], shareData.name || 'shared_file', {
+                  type: shareData.content_type
+                });
+                ShowEditBlinkoModel('2xl', 'create', { file });
+                isProcessingSharedData = false;
+              }).catch((error: Error) => {
+                console.warn('fetching shared content failed:', error);
               RootStore.Get(ToastPlugin).error(error?.message)
               isProcessingSharedData = false;
             });
@@ -285,5 +284,88 @@ export const useAndroidShortcuts = () => {
   }, []);
 };
 
+// iOS Share Inbox (Share Extension -> App Group -> App)
+let isIosShareInitialized = false;
+let isProcessingIosShare = false;
 
+async function checkIosPendingShare() {
+  if (isProcessingIosShare) return;
+  isProcessingIosShare = true;
+  try {
+    const { getPendingSharePayload, clearPendingSharePayload } = await import('tauri-plugin-blinko-api');
+    const payloadStr = await getPendingSharePayload();
+    if (!payloadStr) {
+      isProcessingIosShare = false;
+      return;
+    }
+
+    await clearPendingSharePayload();
+
+    let payload: any = null;
+    try {
+      payload = JSON.parse(payloadStr);
+    } catch {
+      payload = { text: payloadStr };
+    }
+
+    if (payload?.text) {
+      const cleanText = String(payload.text).trim();
+      ShowEditBlinkoModel('2xl', 'create', { text: cleanText });
+      FocusEditorFixMobile();
+      isProcessingIosShare = false;
+      return;
+    }
+
+    if (payload?.localPath && payload?.content_type) {
+      try {
+        const contents = await readFile(payload.localPath);
+        const file = new File([contents], payload.name || 'shared_file', {
+          type: payload.content_type
+        });
+        ShowEditBlinkoModel('2xl', 'create', { file });
+        FocusEditorFixMobile();
+      } catch (error: any) {
+        console.warn('iOS share file read failed:', error);
+        RootStore.Get(ToastPlugin).error(error?.message || String(error));
+        ShowEditBlinkoModel('2xl', 'create');
+      } finally {
+        isProcessingIosShare = false;
+      }
+      return;
+    }
+
+    ShowEditBlinkoModel('2xl', 'create');
+  } catch (error: any) {
+    console.warn('iOS share inbox check failed:', error);
+  } finally {
+    isProcessingIosShare = false;
+  }
+}
+
+export const useIOSShareInbox = () => {
+  useEffect(() => {
+    if (isIosShareInitialized || !isInTauri() || !isIOS()) return;
+    isIosShareInitialized = true;
+
+    const onFocus = () => {
+      checkIosPendingShare();
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        checkIosPendingShare();
+      }
+    };
+
+    checkIosPendingShare();
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onVisibility);
+
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVisibility);
+      isIosShareInitialized = false;
+      isProcessingIosShare = false;
+    };
+  }, []);
+};
 

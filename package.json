@@ -12,6 +12,7 @@
     "dev": "cd app && bun run tauri dev",
     "build:web": "turbo run build:web",
     "test": "turbo run test",
+    "test:tools": "bun test tools/*.test.mjs",
     "test:unit": "turbo run test --filter=@blinko/frontend",
     "test:api-local": "cd app/src-tauri && cargo test --tests -- --nocapture",
     "test:integration": "node tools/local_api_smoke.mjs",
@@ -30,7 +31,7 @@
     "prisma:studio": "cd prisma && prisma studio",
     "build:seed": "tsup prisma/seed.ts --outDir dist",
     "seed": "bun dist/seed.js",
-    "build:blinko:types": "tsc -p tsconfig.blinko.json",
+    "build:blinko:types": "cross-env NODE_OPTIONS=--max-old-space-size=8192 tsc -p tsconfig.blinko.json",
     "build:bundle": "cd app && bun run tauri:desktop:build"
   },
   "devDependencies": {

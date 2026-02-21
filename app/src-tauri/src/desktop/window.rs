@@ -1,4 +1,4 @@
-use tauri::{AppHandle, Manager, Emitter, WebviewWindowBuilder, WebviewUrl, Runtime, WindowEvent};
+use tauri::{AppHandle, Emitter, Manager, Runtime, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 
 // QuickTool window dimensions - defined once for consistency
 pub const QUICKTOOL_WIDTH: f64 = 190.0;
@@ -18,7 +18,7 @@ struct QuickWindowConfig {
 /// Helper function to create a quick window with common settings
 fn create_quick_window<R: Runtime>(
     app: &AppHandle<R>,
-    config: QuickWindowConfig
+    config: QuickWindowConfig,
 ) -> Result<(), String> {
     let window = WebviewWindowBuilder::new(app, config.label, WebviewUrl::App(config.url.into()))
         .title(config.title)
@@ -83,7 +83,7 @@ pub fn toggle_editor_window<R: tauri::Runtime>(app: AppHandle<R>) -> Result<(), 
                         let _ = window.set_focus();
                         let _ = window.emit("quicknote-triggered", ());
                     }
-                },
+                }
                 Ok(false) | Err(_) => {
                     // If window is hidden, show and focus it
                     let _ = window.show();
@@ -92,24 +92,31 @@ pub fn toggle_editor_window<R: tauri::Runtime>(app: AppHandle<R>) -> Result<(), 
                 }
             }
             Ok(())
-        },
-        None => Err("Main window not found".to_string())
+        }
+        None => Err("Main window not found".to_string()),
     }
 }
 
 #[tauri::command]
-pub fn resize_quicknote_window<R: tauri::Runtime>(app: AppHandle<R>, height: f64) -> Result<(), String> {
+pub fn resize_quicknote_window<R: tauri::Runtime>(
+    app: AppHandle<R>,
+    height: f64,
+) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("quicknote") {
         let width = 600.0;
         // Limit max height to 600, min height to 100
         let constrained_height = height.max(100.0).min(600.0);
-        
+
         // Use Tauri 2 Size
         let size = tauri::Size::Logical(tauri::LogicalSize::new(width, constrained_height));
-        window.set_size(size)
+        window
+            .set_size(size)
             .map_err(|e| format!("Failed to set size: {}", e))?;
-        
-        println!("Resized quicknote window to {}x{} (requested: {})", width, constrained_height, height);
+
+        println!(
+            "Resized quicknote window to {}x{} (requested: {})",
+            width, constrained_height, height
+        );
         Ok(())
     } else {
         Err("Quicknote window not found".to_string())
@@ -138,18 +145,25 @@ pub fn toggle_quicknote_window<R: tauri::Runtime>(app: AppHandle<R>) -> Result<(
 }
 
 #[tauri::command]
-pub fn resize_quickai_window<R: tauri::Runtime>(app: AppHandle<R>, height: f64) -> Result<(), String> {
+pub fn resize_quickai_window<R: tauri::Runtime>(
+    app: AppHandle<R>,
+    height: f64,
+) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("quickai") {
         let width = 600.0;
         // Limit max height to 600, min height to 100 (same as quicknote)
         let constrained_height = height.max(100.0).min(600.0);
-        
+
         // Use Tauri 2 Size
         let size = tauri::Size::Logical(tauri::LogicalSize::new(width, constrained_height));
-        window.set_size(size)
+        window
+            .set_size(size)
             .map_err(|e| format!("Failed to set size: {}", e))?;
-        
-        println!("Resized quickai window to {}x{} (requested: {})", width, constrained_height, height);
+
+        println!(
+            "Resized quickai window to {}x{} (requested: {})",
+            width, constrained_height, height
+        );
         Ok(())
     } else {
         Err("Quickai window not found".to_string())
@@ -178,7 +192,10 @@ pub fn toggle_quickai_window<R: tauri::Runtime>(app: AppHandle<R>) -> Result<(),
 }
 
 #[tauri::command]
-pub fn navigate_main_to_ai_with_prompt<R: tauri::Runtime>(app: AppHandle<R>, prompt: String) -> Result<(), String> {
+pub fn navigate_main_to_ai_with_prompt<R: tauri::Runtime>(
+    app: AppHandle<R>,
+    prompt: String,
+) -> Result<(), String> {
     // Show and focus main window
     let main_window = match app.get_webview_window("main") {
         Some(window) => window,
@@ -237,13 +254,16 @@ pub fn hide_quicktool_window<R: tauri::Runtime>(app: AppHandle<R>) -> Result<(),
 }
 
 #[tauri::command]
-pub fn set_desktop_theme<R: tauri::Runtime>(app: AppHandle<R>, theme: String) -> Result<(), String> {
-    use tauri::{Theme, window::Color};
+pub fn set_desktop_theme<R: tauri::Runtime>(
+    app: AppHandle<R>,
+    theme: String,
+) -> Result<(), String> {
+    use tauri::{window::Color, Theme};
 
     let tauri_theme = match theme.as_str() {
         "light" => Theme::Light,
         "dark" => Theme::Dark,
-        _ => return Err(format!("Invalid theme: {}", theme))
+        _ => return Err(format!("Invalid theme: {}", theme)),
     };
 
     // Define background colors based on theme
@@ -266,7 +286,10 @@ pub fn set_desktop_theme<R: tauri::Runtime>(app: AppHandle<R>, theme: String) ->
         if let Err(e) = window.set_background_color(Some(background_color)) {
             eprintln!("Failed to set background color for main window: {}", e);
         } else {
-            println!("Set main window background color to: {:?}", background_color);
+            println!(
+                "Set main window background color to: {:?}",
+                background_color
+            );
         }
     }
 
@@ -276,7 +299,7 @@ pub fn set_desktop_theme<R: tauri::Runtime>(app: AppHandle<R>, theme: String) ->
 #[tauri::command]
 pub fn set_desktop_colors<R: tauri::Runtime>(
     app: AppHandle<R>,
-    background_color: Option<String>
+    background_color: Option<String>,
 ) -> Result<(), String> {
     use tauri::window::Color;
 
@@ -300,7 +323,10 @@ pub fn set_desktop_colors<R: tauri::Runtime>(
             if let Some(window) = app.get_webview_window("main") {
                 let color = Color(r, g, b, a);
                 if let Err(e) = window.set_background_color(Some(color)) {
-                    eprintln!("Failed to set custom background color for main window: {}", e);
+                    eprintln!(
+                        "Failed to set custom background color for main window: {}",
+                        e
+                    );
                 } else {
                     println!("Set main window custom background color to: {}", color_str);
                 }

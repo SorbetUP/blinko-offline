@@ -6,12 +6,21 @@ import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMediaQuery } from 'usehooks-ts';
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
+
+type RouterItem = {
+  title: string;
+  href: string;
+  icon: string;
+  shallow?: boolean;
+  hiddenMobile?: boolean;
+  hiddenSidebar?: boolean;
+};
 export class BaseStore implements Store {
   sid = 'BaseStore';
   constructor() {
     makeAutoObservable(this);
   }
-  routerList = [
+  routerList: RouterItem[] = [
     {
       title: 'blinko',
       href: '/',
@@ -52,21 +61,20 @@ export class BaseStore implements Store {
       title: 'trash',
       href: '/?path=trash',
       hiddenMobile: true,
-      hiddenSidebar: true,
       icon: 'hugeicons:delete-02',
     },
     {
       title: 'plugin',
       href: '/plugin',
-      hiddenSidebar: true,
       hiddenMobile: true,
+      hiddenSidebar: true,
       icon: 'hugeicons:plug-socket',
     },
     {
       title: 'settings',
       href: '/settings',
-      hiddenSidebar: true,
       hiddenMobile: true,
+      hiddenSidebar: true,
       icon: 'hugeicons:settings-01',
     },
   ];
@@ -245,6 +253,8 @@ export class BaseStore implements Store {
   };
 
   collapseSidebar = () => {
-    this.sidebarCollapsed.save(false);
+    // "collapsed" means the compact sidebar (no labels, no resize handle).
+    // On mobile we want the sidebar collapsed by default.
+    this.sidebarCollapsed.save(true);
   };
 }

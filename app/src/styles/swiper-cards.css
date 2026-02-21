@@ -12,3 +12,12 @@
   font-size: 22px;
   font-weight: bold;
 }
+
+/* Keep only the active card as a composited scroll layer. */
+.review-card-scroll {
+  overflow-y: hidden;
+}
+
+.swiper-slide-active .review-card-scroll {
+  overflow-y: auto;
+}

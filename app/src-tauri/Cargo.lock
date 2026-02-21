@@ -38,6 +38,7 @@ dependencies = [
  "tauri-plugin-updater",
  "tauri-plugin-upload",
  "tokio",
+ "tokio-util",
  "tower-http 0.5.2",
  "uuid 1.18.1",
  "zip",

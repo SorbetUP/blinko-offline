@@ -1,5 +1,6 @@
 import { router, authProcedure, demoAuthMiddleware, superAdminAuthMiddleware } from '@server/middleware';
 import { z } from 'zod';
+import { TRPCError } from '@trpc/server';
 import { DBJob } from '@server/jobs/dbjob';
 import { ArchiveJob } from '@server/jobs/archivejob';
 import { UPLOAD_FILE_PATH } from '@shared/lib/pathConstant';
@@ -13,6 +14,7 @@ import { MarkdownImporter } from '../jobs/markdownJob';
 import { GoogleKeepImporter } from '../jobs/googleKeepJob';
 import { getPgBoss } from '../lib/pgBoss';
 import { prisma } from '../prisma';
+import { resetAccountDbData } from '../lib/reset_account_data';
 
 // Schema for task info compatible with frontend
 const taskInfoSchema = z.object({
@@ -170,14 +172,30 @@ export const taskRouter = router({
     .input(z.object({
       filePath: z.string(), // Path to .zip (Google Takeout/Keep) or single .json
       autoTags: z.boolean().optional(),
+      importTextHashtags: z.boolean().optional(),
     }))
     .mutation(async function* ({ input, ctx }) {
       try {
-        const fileResult = await FileService.getFile(input.filePath);
+        // Resolve /api/file/ID to actual filesystem path
+        let resolvedPath = input.filePath;
+        if (resolvedPath.startsWith('/api/file/')) {
+          const fileId = parseInt(resolvedPath.replace('/api/file/', ''), 10);
+          if (!isNaN(fileId)) {
+            const attachment = await prisma.attachments.findUnique({ where: { id: fileId } });
+            if (!attachment) {
+              throw new TRPCError({ code: 'NOT_FOUND', message: `File not found: ${resolvedPath}` });
+            }
+            // Build the full filesystem path
+            resolvedPath = path.join(UPLOAD_FILE_PATH, attachment.path);
+          }
+        }
+
+        const fileResult = await FileService.getFile(resolvedPath);
         const keepImporter = new GoogleKeepImporter();
 
         for await (const result of keepImporter.importKeep(fileResult.path, ctx, {
           autoTags: input.autoTags ?? true,
+          importTextHashtags: input.importTextHashtags ?? false,
         })) {
           yield result;
         }
@@ -225,6 +243,37 @@ export const taskRouter = router({
         console.error("Error in importFromMarkdown:", error);
         throw new Error(error as string);
       }
+    }),
+
+  resetMyData: authProcedure.use(demoAuthMiddleware)
+    .input(z.object({
+      confirmPhrase: z.string(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const accountId = Number(ctx.id);
+      if (!Number.isFinite(accountId) || accountId <= 0) {
+        throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Unauthorized' });
+      }
+
+      const phrase = (input.confirmPhrase ?? '').trim().toUpperCase();
+      if (phrase !== 'RESET') {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid confirmation phrase' });
+      }
+
+      const { attachmentPaths, deleted } = await prisma.$transaction(async (tx) => {
+        return await resetAccountDbData(tx as any, accountId);
+      });
+
+      const fileResults = await Promise.allSettled(
+        (attachmentPaths ?? []).map((p) => FileService.deleteFile(p)),
+      );
+      const fileFailures = fileResults.filter(r => r.status === 'rejected').length;
+
+      return {
+        ok: true,
+        deleted,
+        files: { total: (attachmentPaths ?? []).length, failed: fileFailures },
+      };
     }),
 
   exportMarkdown: authProcedure

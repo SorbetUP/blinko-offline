@@ -3,6 +3,7 @@ import { isInTauri, isDesktop } from '@/lib/tauriHelper';
 import { invoke } from '@tauri-apps/api/core';
 import { RootStore } from '@/store';
 import { BlinkoStore } from '@/store/blinkoStore';
+import { UserStore } from '@/store/user';
 
 const DEFAULT_HOTKEY_CONFIG = {
   quickNote: 'Shift+Space',
@@ -30,9 +31,12 @@ export const useInitialHotkeySetup = () => {
     const setupInitialHotkeys = async () => {
       try {
         const blinko = RootStore.Get(BlinkoStore);
-        await blinko.config.call(); // Ensure config is loaded
-        
-        const config = await blinko.config.value?.desktopHotkeys;
+        const userStore = RootStore.Get(UserStore);
+        if (userStore.isLogin) {
+          await blinko.config.call();
+        }
+
+        const config = blinko.config.value?.desktopHotkeys;
         const finalConfig = {
           ...DEFAULT_HOTKEY_CONFIG,
           ...config,

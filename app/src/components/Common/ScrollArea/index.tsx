@@ -1,5 +1,4 @@
 import i18n from "@/lib/i18n";
-import { _ } from "@/lib/lodash";
 import { observer } from "mobx-react-lite";
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { useMediaQuery } from "usehooks-ts";
@@ -7,12 +6,15 @@ import { useMediaQuery } from "usehooks-ts";
 type IProps = {
   style?: any;
   className?: any;
-  onBottom?: () => void;
+  // Can return a Promise to allow the ScrollArea to "auto-fill" while near bottom.
+  onBottom?: () => void | Promise<void>;
   onRefresh?: () => Promise<any>;
   children: any;
   pullDownThreshold?: number;
   maxPullDownDistance?: number;
   fixMobileTopBar?: boolean
+  // How far from the bottom (in px) we start prefetching. If omitted, uses a dynamic value.
+  bottomOffset?: number;
 };
 
 export type ScrollAreaHandles = {
@@ -28,7 +30,8 @@ export const ScrollArea = observer(forwardRef<ScrollAreaHandles, IProps>(({
   onRefresh,
   pullDownThreshold = 60,
   maxPullDownDistance = 100,
-  fixMobileTopBar = false
+  fixMobileTopBar = false,
+  bottomOffset
 }, ref) => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const isPc = useMediaQuery('(min-width: 768px)');
@@ -43,10 +46,70 @@ export const ScrollArea = observer(forwardRef<ScrollAreaHandles, IProps>(({
   const canPullRef = useRef(true); // Initialize as true for initial state
   const currentInstanceRef = useRef(Math.random().toString(36)); // Unique identifier for this ScrollArea instance
 
-  let debounceBottom;
-  if (onBottom) {
-    debounceBottom = _.debounce(onBottom!, 500, { leading: true, trailing: false });
-  }
+  const bottomInFlightRef = useRef(false);
+  const bottomRafIdRef = useRef<number | null>(null);
+
+  const getTargetNode = (target: EventTarget | null): Node | null => {
+    return target instanceof Node ? target : null;
+  };
+
+  const getTargetElement = (target: EventTarget | null): Element | null => {
+    if (target instanceof Element) return target;
+    if (target instanceof Node) return target.parentElement;
+    return null;
+  };
+
+  const getClientY = (e: TouchEvent | MouseEvent) => {
+    if (typeof TouchEvent !== 'undefined' && e instanceof TouchEvent) {
+      return e.touches[0]?.clientY ?? 0;
+    }
+    return e.clientY;
+  };
+
+  const getEffectiveBottomOffset = (el: HTMLDivElement) => {
+    // Start prefetching earlier on tall viewports to avoid "hitting the wall" when scrolling fast.
+    return typeof bottomOffset === 'number' ? bottomOffset : Math.max(300, Math.floor(el.clientHeight * 1.5));
+  };
+
+  const isNearBottom = (el: HTMLDivElement) => {
+    const offset = getEffectiveBottomOffset(el);
+    return (el.scrollHeight - el.scrollTop) <= (el.clientHeight + offset);
+  };
+
+  const scheduleBottomCheck = () => {
+    if (!onBottom) return;
+    if (bottomRafIdRef.current != null) return;
+    bottomRafIdRef.current = requestAnimationFrame(() => {
+      bottomRafIdRef.current = null;
+      const el = scrollRef.current;
+      if (!el) return;
+      if (!isNearBottom(el)) return;
+      void maybeCallOnBottom();
+    });
+  };
+
+  const maybeCallOnBottom = async () => {
+    if (!onBottom) return;
+    if (bottomInFlightRef.current) return;
+
+    const el = scrollRef.current;
+    const beforeHeight = el?.scrollHeight ?? null;
+
+    bottomInFlightRef.current = true;
+    try {
+      await onBottom();
+    } finally {
+      bottomInFlightRef.current = false;
+    }
+
+    // If content grew and we're still near the bottom, keep loading to stay ahead of fast scrolling.
+    requestAnimationFrame(() => {
+      const cur = scrollRef.current;
+      if (!cur) return;
+      if (beforeHeight != null && cur.scrollHeight <= beforeHeight) return;
+      if (isNearBottom(cur)) scheduleBottomCheck();
+    });
+  };
 
   useImperativeHandle(ref, () => ({
     scrollToBottom: () => {
@@ -61,9 +124,14 @@ export const ScrollArea = observer(forwardRef<ScrollAreaHandles, IProps>(({
 
   const handleScroll = (e) => {
     const target = e.target;
-    const bottom = (target.scrollHeight - target.scrollTop) <= target.clientHeight + 100;
-    if (bottom) {
-      debounceBottom?.();
+    // Defensive clamp: some trackpad horizontal gestures can move hidden-x scroll containers,
+    // which visually clips content from the left.
+    if (target.scrollLeft !== 0) {
+      target.scrollLeft = 0;
+    }
+
+    if (onBottom && isNearBottom(target)) {
+      scheduleBottomCheck();
     }
 
     // Update can pull state
@@ -78,11 +146,11 @@ export const ScrollArea = observer(forwardRef<ScrollAreaHandles, IProps>(({
     if (!scrollElement) return;
 
     // Check if the touch started within this ScrollArea
-    const target = e.target as Element;
-    if (!scrollElement.contains(target)) return;
+    const targetNode = getTargetNode(e.target);
+    if (!targetNode || !scrollElement.contains(targetNode)) return;
 
     // Check if the touch event is within an expanded container (blog mode)
-    const expandedContainer = target.closest('.expanded-container');
+    const expandedContainer = getTargetElement(e.target)?.closest('.expanded-container');
     if (expandedContainer) {
       return;
     }
@@ -90,7 +158,7 @@ export const ScrollArea = observer(forwardRef<ScrollAreaHandles, IProps>(({
     // Check if at top position - allow small tolerance for bounce effect
     if (scrollElement.scrollTop > 5) return;
 
-    const clientY = e instanceof TouchEvent ? e.touches[0].clientY : e.clientY;
+    const clientY = getClientY(e);
     startYRef.current = clientY;
     setIsDragging(true);
   };
@@ -99,8 +167,7 @@ export const ScrollArea = observer(forwardRef<ScrollAreaHandles, IProps>(({
     if (!isDragging || !onRefresh || isRefreshing) return;
 
     // Check if the touch event is within an expanded container (blog mode)
-    const target = e.target as Element;
-    const expandedContainer = target.closest('.expanded-container');
+    const expandedContainer = getTargetElement(e.target)?.closest('.expanded-container');
     if (expandedContainer) {
       setIsDragging(false);
       setPullDistance(0);
@@ -111,7 +178,7 @@ export const ScrollArea = observer(forwardRef<ScrollAreaHandles, IProps>(({
     const scrollElement = scrollRef.current;
     if (!scrollElement) return;
 
-    const clientY = e instanceof TouchEvent ? e.touches[0].clientY : e.clientY;
+    const clientY = getClientY(e);
     const deltaY = clientY - startYRef.current;
 
     if (deltaY > 0) {
@@ -133,8 +200,7 @@ export const ScrollArea = observer(forwardRef<ScrollAreaHandles, IProps>(({
     if (!isDragging || !onRefresh) return;
 
     // Check if the touch event is within an expanded container (blog mode)
-    const target = e.target as Element;
-    const expandedContainer = target.closest('.expanded-container');
+    const expandedContainer = getTargetElement(e.target)?.closest('.expanded-container');
     if (expandedContainer) {
       setIsDragging(false);
       setPullDistance(0);
@@ -167,6 +233,18 @@ export const ScrollArea = observer(forwardRef<ScrollAreaHandles, IProps>(({
     canPullRef.current = divElement.scrollTop === 0;
 
     divElement.addEventListener("scroll", handleScroll);
+    const keepHorizontalAnchor = () => {
+      if (divElement.scrollLeft !== 0) {
+        divElement.scrollLeft = 0;
+      }
+    };
+    divElement.addEventListener("wheel", keepHorizontalAnchor, { passive: true });
+    // Best-effort: some trackpad gestures can leave the container with a non-zero scrollLeft
+    // without an immediate follow-up scroll event. Clamp on mount as well.
+    keepHorizontalAnchor();
+    requestAnimationFrame(keepHorizontalAnchor);
+    const clampT1 = window.setTimeout(keepHorizontalAnchor, 50);
+    const clampT2 = window.setTimeout(keepHorizontalAnchor, 200);
 
     // Add pull-to-refresh listeners only if onRefresh exists AND device is mobile
     if (onRefresh && !isPc) {
@@ -177,13 +255,20 @@ export const ScrollArea = observer(forwardRef<ScrollAreaHandles, IProps>(({
 
     return () => {
       divElement.removeEventListener("scroll", handleScroll);
+      divElement.removeEventListener("wheel", keepHorizontalAnchor);
+      window.clearTimeout(clampT1);
+      window.clearTimeout(clampT2);
+      if (bottomRafIdRef.current != null) {
+        cancelAnimationFrame(bottomRafIdRef.current);
+        bottomRafIdRef.current = null;
+      }
       if (onRefresh && !isPc) {
         divElement.removeEventListener('touchstart', handleTouchStart);
         divElement.removeEventListener('touchmove', handleTouchMove);
         divElement.removeEventListener('touchend', handleTouchEnd);
       }
     };
-  }, [onRefresh, isRefreshing, isDragging, pullDistance, pullDownThreshold, isPc]);
+  }, [onRefresh, isRefreshing, isDragging, pullDistance, pullDownThreshold, isPc, onBottom, bottomOffset]);
 
   // Calculate pull progress and arrow rotation
   const pullProgress = Math.min(pullDistance / pullDownThreshold, 1);
@@ -229,7 +314,7 @@ export const ScrollArea = observer(forwardRef<ScrollAreaHandles, IProps>(({
         paddingTop: showRefreshIndicator ? `${pullDistance}px` : undefined,
         transition: isDragging ? 'none' : 'padding-top 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
       }}
-      className={`${className} overflow-y-scroll overflow-x-hidden ${isPc ? '' : 'scrollbar-hide'} scroll-smooth scroll-area`}
+      className={`w-full ${className} overflow-y-scroll overflow-x-hidden ${isPc ? '' : 'scrollbar-hide'} scroll-smooth scroll-area`}
     >
       {fixMobileTopBar && !isPc && <div className="h-16"></div>}
       {/* Pull to refresh indicator */}

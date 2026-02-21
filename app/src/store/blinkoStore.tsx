@@ -211,7 +211,7 @@ export class BlinkoStore implements Store {
           attachments: attachments || [],
           isTop: !!isTop,
           isShare: !!isShare,
-          references: references.map(refId => ({ toNoteId: refId })),
+          references: (references ?? []).map(refId => ({ toNoteId: refId })),
           createdAt: now,
           updatedAt: now,
           isOffline: true,
@@ -280,7 +280,7 @@ export class BlinkoStore implements Store {
           const { id, isOffline, pendingSync, references, ...noteData } = note;
           const onlineNote: UpsertNoteParams = {
             ...noteData,
-            references: references.map(ref => ref.toNoteId),
+            references: (references ?? []).map(ref => ref.toNoteId),
             showToast: false
           };
           await this.upsertNote.call(onlineNote);
@@ -511,7 +511,7 @@ export class BlinkoStore implements Store {
     } else if (currentPath === 'trash') {
       await this.trashList.callNextPage({});
     } else if (currentPath === 'all') {
-      this.noteList.resetAndCall({});
+      await this.noteList.callNextPage({});
     } else {
       await this.blinkoList.callNextPage({});
     }

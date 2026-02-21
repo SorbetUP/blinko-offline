@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { isInTauri } from '@/lib/tauriHelper';
+import { getTauriListen } from '@/lib/tauriEvent';
 import { RootStore } from '@/store';
 import { BlinkoStore } from '@/store/blinkoStore';
 
@@ -16,7 +17,7 @@ export const useQuicknoteHotkey = (isCreateMode: boolean) => {
 
     const setupEventListeners = async () => {
       try {
-        const { listen } = await import('@tauri-apps/api/event');
+        const listen = await getTauriListen();
 
         if (!isMounted) return;
 

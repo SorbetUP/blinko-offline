@@ -71,6 +71,8 @@ pub async fn create_note(
         is_share: input.is_share.unwrap_or(false),
         is_top: input.is_top.unwrap_or(false),
         note_type: input.note_type.unwrap_or(0),
+        created_at: None,
+        updated_at: None,
     };
 
     match repo.create_note(payload, &state.device_id).await {
@@ -90,7 +92,7 @@ pub async fn create_note(
                 .await;
 
             let outbox = OutboxRepository::new(state.data_state.db.pool.clone());
-            let _ = outbox
+            let appended = outbox
                 .append(
                     "note",
                     &note.sync_id,
@@ -99,6 +101,9 @@ pub async fn create_note(
                     &state.device_id,
                 )
                 .await;
+            if appended.is_ok() {
+                crate::sync::scheduler::request_sync_soon();
+            }
 
             (StatusCode::CREATED, Json(note)).into_response()
         }
@@ -139,6 +144,8 @@ pub async fn update_note(
         is_share: input.is_share.unwrap_or(existing.is_share),
         is_top: input.is_top.unwrap_or(existing.is_top),
         note_type: input.note_type.unwrap_or(existing.note_type),
+        created_at: None,
+        updated_at: None,
     };
 
     match repo.update_note(id, payload, &state.device_id).await {
@@ -158,7 +165,7 @@ pub async fn update_note(
                 .await;
 
             let outbox = OutboxRepository::new(state.data_state.db.pool.clone());
-            let _ = outbox
+            let appended = outbox
                 .append(
                     "note",
                     &note.sync_id,
@@ -167,6 +174,9 @@ pub async fn update_note(
                     &state.device_id,
                 )
                 .await;
+            if appended.is_ok() {
+                crate::sync::scheduler::request_sync_soon();
+            }
 
             (StatusCode::OK, Json(note)).into_response()
         }
@@ -196,7 +206,7 @@ pub async fn delete_note(State(state): State<Arc<LocalApiContext>>, Path(id): Pa
                 .await;
 
             let outbox = OutboxRepository::new(state.data_state.db.pool.clone());
-            let _ = outbox
+            let appended = outbox
                 .append(
                     "note",
                     &note.sync_id,
@@ -205,6 +215,9 @@ pub async fn delete_note(State(state): State<Arc<LocalApiContext>>, Path(id): Pa
                     &state.device_id,
                 )
                 .await;
+            if appended.is_ok() {
+                crate::sync::scheduler::request_sync_soon();
+            }
 
             (StatusCode::OK, Json(note)).into_response()
         }

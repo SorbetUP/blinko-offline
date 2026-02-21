@@ -39,6 +39,11 @@ const localInvokeLink: TRPCLink<AppRouter> = () => {
 
 const invokeLocal = async (path: string, input: unknown) => {
   const { invoke } = await import('@tauri-apps/api/core');
+  if (path === 'task.resetMyData') {
+    // This is a destructive operation. In command-only mode we don't currently have a safe implementation,
+    // so fail loudly instead of returning `{ ok: true }`.
+    throw new Error('Reset is not supported in local command-only mode.');
+  }
   if (path === 'notes.list') {
     return await invoke('notes_list', { input });
   }
@@ -63,6 +68,11 @@ const invokeLocal = async (path: string, input: unknown) => {
     return await invoke('analytics_monthly_stats', { input });
   }
 
+  // Plugin APIs (command-only mode): treat as empty to avoid breaking boot flows that iterate arrays.
+  if (path === 'plugin.getInstalledPlugins') return [];
+  if (path === 'plugin.getAllPlugins') return [];
+  if (path === 'plugin.getPluginCssContents') return [];
+
   // Fallbacks for unsupported commands in command-only mode
   if (path.endsWith('list') || path.endsWith('List')) return [];
   if (path.endsWith('detail') || path.endsWith('Detail')) return null;
@@ -77,14 +87,14 @@ const getTransformer = () => {
 const getLinks = (useStream = false) => {
   try {
     if (isLocalMode() && isLocalHttpUnavailable()) {
-      return localInvokeLink();
+      return localInvokeLink;
     }
 
     if (isLocalMode()) {
       const localUrl = getBlinkoEndpoint('/api/trpc');
       if (!localUrl.startsWith('http://') && !localUrl.startsWith('https://')) {
         setLocalHttpUnavailable(true);
-        return localInvokeLink();
+        return localInvokeLink;
       }
       return httpLink({
         url: localUrl,

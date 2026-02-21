@@ -10,10 +10,13 @@ use crate::local_runtime::config::{save_config, LocalConfig};
 use crate::local_runtime::paths::RuntimePaths;
 use crate::local_runtime::LocalDataState;
 
+pub mod google_keep;
 pub mod handlers_auth;
+pub mod handlers_conflicts;
 pub mod handlers_files;
 pub mod handlers_notes;
 pub mod handlers_settings;
+pub mod handlers_share;
 pub mod handlers_sync;
 pub mod handlers_trpc;
 pub mod local_user;
@@ -142,4 +145,9 @@ pub fn get_local_api_base_url(state: tauri::State<'_, crate::local_runtime::Loca
         .snapshot()
         .api_port
         .map(|port| format!("http://127.0.0.1:{port}"))
+}
+
+#[tauri::command]
+pub fn get_local_api_token(state: tauri::State<'_, LocalDataState>) -> Option<String> {
+    state.config_snapshot().local_api.token
 }

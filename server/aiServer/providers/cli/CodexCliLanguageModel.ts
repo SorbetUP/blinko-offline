@@ -6,6 +6,7 @@ import type {
 } from '@ai-sdk/provider';
 import { spawn } from 'child_process';
 import { promptToPlainText } from './promptToText';
+import { expandHome, chunkText, forEachJsonLine } from './shared';
 
 type CodexCliLanguageModelOptions = {
   modelId: string;
@@ -18,41 +19,6 @@ type CodexJsonEvent =
   | { type: 'item.completed'; item: { id: string; type: string; text?: string } }
   | { type: 'turn.completed'; usage?: { input_tokens?: number; output_tokens?: number } }
   | { type: string; [key: string]: unknown };
-
-function expandHome(p: string): string {
-  if (!p.startsWith('~')) return p;
-  const home = process.env.HOME;
-  if (!home) return p;
-  if (p === '~') return home;
-  if (p.startsWith('~/')) return `${home}${p.slice(1)}`;
-  return p;
-}
-
-function chunkText(text: string, chunkSize = 2048): string[] {
-  if (!text) return [];
-  const chunks: string[] = [];
-  for (let i = 0; i < text.length; i += chunkSize) chunks.push(text.slice(i, i + chunkSize));
-  return chunks;
-}
-
-function forEachJsonLine(onLine: (obj: CodexJsonEvent) => void) {
-  let buffer = '';
-  return (chunk: Buffer | Uint8Array) => {
-    buffer += Buffer.from(chunk).toString('utf8');
-    while (true) {
-      const idx = buffer.indexOf('\n');
-      if (idx === -1) break;
-      const line = buffer.slice(0, idx).trim();
-      buffer = buffer.slice(idx + 1);
-      if (!line) continue;
-      try {
-        onLine(JSON.parse(line));
-      } catch {
-        // ignore non-JSON lines
-      }
-    }
-  };
-}
 
 export class CodexCliLanguageModel implements LanguageModelV1 {
   readonly specificationVersion = 'v1' as const;

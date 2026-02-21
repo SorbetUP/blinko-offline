@@ -1,7 +1,6 @@
 import { useState, useEffect, lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation, useSearchParams } from "react-router-dom";
 import { ThemeProvider } from 'next-themes';
-import { Inspector, InspectParams } from 'react-dev-inspector';
 import { HeroUIProvider } from '@heroui/react';
 import './styles/github-markdown.css';
 import 'react-photo-view/dist/react-photo-view.css';
@@ -17,7 +16,7 @@ import { RootStore } from '@/store';
 import { UserStore } from '@/store/user';
 import { getTokenData, setNavigate } from '@/components/Auth/auth-client';
 import { BlinkoStore } from '@/store/blinkoStore';
-import { useAndroidShortcuts } from '@/lib/hooks';
+import { useAndroidShortcuts, useIOSShareInbox } from '@/lib/hooks';
 import { useQuickaiHotkey } from '@/hooks/useQuickaiHotkey';
 import { useInitialHotkeySetup } from '@/hooks/useInitialHotkeySetup';
 import { isInTauri, isDesktop } from "@/lib/tauriHelper";
@@ -25,6 +24,7 @@ import { resolveBaseUrl, isLocalMode, saveBlinkoEndpoint, setLocalHttpUnavailabl
 import { eventBus } from "@/lib/event";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { reinitializeTrpcApi } from "@/lib/trpc";
 import { signIn } from "@/components/Auth/auth-client";
 import QuickNotePage from "./pages/quicknote";
@@ -48,17 +48,29 @@ const DetailPage = lazy(() => import('./pages/detail'));
 const ShareIndexPage = lazy(() => import('./pages/share'));
 const ShareDetailPage = lazy(() => import('./pages/share/[id]'));
 const AiSharePage = lazy(() => import('./pages/ai-share'));
+const E2EProtectedImagesPage = lazy(() => import('./pages/__e2e__/protected-images'));
+const DevInspector = lazy(() => import('./components/Common/DevInspector'));
 
 const HomeRedirect = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const blinko = RootStore.Get(BlinkoStore);
+  const userStore = RootStore.Get(UserStore);
   const [searchParams] = useSearchParams();
   const [loading, setLoading] = useState(true);
-  
+
   useEffect(() => {
     const redirectToDefaultPage = async () => {
-      await blinko.config.call();
+      // Only try to load config if user is authenticated
+      if (userStore.isLogin) {
+        try {
+          await blinko.config.call();
+        } catch (error) {
+          // Silently fail if config can't be loaded
+          console.debug('Failed to load config:', error);
+        }
+      }
+
       const defaultHomePage = blinko.config.value?.defaultHomePage;
       const currentPath = searchParams.get('path');
       const isDirectNavigation = location.key === 'default';
@@ -66,12 +78,12 @@ const HomeRedirect = () => {
         setLoading(false);
         return;
       }
-      
+
       navigate(`/?path=${defaultHomePage}`, { replace: true });
     };
-    
+
     redirectToDefaultPage();
-  }, [navigate, searchParams, location]);
+  }, [navigate, searchParams, location, userStore.isLogin]);
   
   if (loading) {
     return <LoadingPage />;
@@ -120,10 +132,23 @@ const ProtectedRoute = ({ children }) => {
 };
 
 // Detect current window type
-const getWindowType = () => {
+type WindowType = 'main' | 'quicknote' | 'quickai' | 'quicktool';
+
+const getWindowType = (): WindowType => {
   if (!isInTauri()) return 'main';
 
-  // Check URL path to determine window type
+  try {
+    const label = getCurrentWebviewWindow().label;
+    if (label === 'quicktool' || label === 'quicknote' || label === 'quickai') {
+      return label;
+    }
+    // Any non-quick label (e.g. "main") should stay on main routing.
+    return 'main';
+  } catch {
+    // Fallback to URL path if the window API is unavailable.
+  }
+
+  // Fallback: check URL path to determine window type
   const path = window.location.pathname;
   if (path.startsWith('/quicktool')) return 'quicktool';
   if (path.startsWith('/quicknote')) return 'quicknote';
@@ -134,12 +159,11 @@ const getWindowType = () => {
 function AppRoutes() {
   const navigate = useNavigate();
   const windowType = getWindowType();
+  const shouldEnableDesktopHotkeys = windowType === 'main' && isDesktop();
 
-  // Initialize Quick AI hotkey handler inside Router context (only for main window on desktop)
-  if (windowType === 'main' && isDesktop()) {
-    useQuickaiHotkey();
-    useQuicknoteHotkey(true);
-  }
+  // Keep hook order stable and let hooks self-disable based on window type.
+  useQuickaiHotkey(shouldEnableDesktopHotkeys);
+  useQuicknoteHotkey(shouldEnableDesktopHotkeys);
 
   // Listen for navigation commands from Tauri (only for current window type)
   useEffect(() => {
@@ -250,9 +274,12 @@ function AppRoutes() {
             <Route path="/share" element={<ShareIndexPage />} />
             <Route path="/share/:id" element={<ShareDetailPage />} />
             <Route path="/ai-share/:id" element={<AiSharePage />} />
-            <Route path="/quicknote" element={<QuickNotePage />} />
-            <Route path="/quickai" element={<QuickAIPage />} />
-            <Route path="/quicktool" element={<QuickToolPage />} />
+            <Route path="/quicknote" element={<Navigate to="/" replace />} />
+            <Route path="/quickai" element={<Navigate to="/" replace />} />
+            <Route path="/quicktool" element={<Navigate to="/" replace />} />
+            {import.meta.env.MODE !== 'production' && (
+              <Route path="/__e2e__/protected-images" element={<E2EProtectedImagesPage />} />
+            )}
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </Suspense>
@@ -265,14 +292,27 @@ function App() {
 
   const [baseReady, setBaseReady] = useState(false);
 
-  const readStoredCredentials = () => {
+  const readStoredCredentials = async () => {
     try {
+      // Try localStorage first
       const rawUser = localStorage.getItem('username');
       const rawPassword = localStorage.getItem('password');
       const username = rawUser ? JSON.parse(rawUser) : null;
       const password = rawPassword ? JSON.parse(rawPassword) : null;
       if (typeof username === 'string' && typeof password === 'string') {
         return { username, password };
+      }
+
+      // If no stored credentials and running in Tauri, try to get auto-generated credentials
+      if (isInTauri()) {
+        try {
+          const creds = await invoke<[string, string] | null>('get_local_credentials');
+          if (creds && creds.length === 2) {
+            return { username: creds[0], password: creds[1] };
+          }
+        } catch (error) {
+          console.error('Failed to get local credentials:', error);
+        }
       }
     } catch (error) {
       // ignore malformed storage
@@ -282,6 +322,8 @@ function App() {
   
   // Initialize Android shortcuts handler
   useAndroidShortcuts();
+  // iOS Share Extension inbox (App Group payload)
+  useIOSShareInbox();
 
   // Initialize hotkey setup for desktop app only
   if (isDesktop()) {
@@ -317,7 +359,7 @@ function App() {
         } catch (error) {
           setLocalHttpUnavailable(true);
         }
-        const creds = readStoredCredentials();
+        const creds = await readStoredCredentials();
         if (creds) {
           await signIn('credentials', {
             username: creds.username,
@@ -344,7 +386,7 @@ function App() {
           setLocalHttpUnavailable(false);
           reinitializeTrpcApi();
           eventBus.emit('local-api:ready', baseUrl);
-          const creds = readStoredCredentials();
+          const creds = await readStoredCredentials();
           if (creds) {
             await signIn('credentials', {
               username: creds.username,
@@ -382,14 +424,11 @@ function App() {
 
   return (
     <>
-      <Inspector
-        keys={['control', 'alt', 'x']}
-        onClickElement={({ codeInfo }: InspectParams) => {
-          if (!codeInfo?.absolutePath) return
-          const { absolutePath, lineNumber, columnNumber } = codeInfo
-          window.open(`cursor://file/${absolutePath}:${lineNumber}:${columnNumber}`)
-        }}
-      />
+      {import.meta.env.DEV && (
+        <Suspense fallback={null}>
+          <DevInspector />
+        </Suspense>
+      )}
       <BrowserRouter>
         <HeroUIProvider>
           <ThemeProvider attribute="class" enableSystem={false}>

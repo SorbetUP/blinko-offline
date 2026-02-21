@@ -5,6 +5,7 @@
         "emitDeclarationOnly": true,
         "outDir": "blinko-types/dist/types",
         "noEmit": false,
+        "types": [],
         "rootDir": ".",
         "baseUrl": ".",
         "paths": {

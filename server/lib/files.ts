@@ -11,6 +11,7 @@ import { PassThrough } from 'stream';
 import { createWriteStream } from "fs";
 import pathIsInside from 'path-is-inside';
 import sanitizeFilename from 'sanitize-filename';
+import crypto from 'crypto';
 
 export class FileService {
   /**
@@ -247,6 +248,79 @@ export class FileService {
     }
   }
 
+  /**
+   * Overwrite an existing attachment (same `path`) with new bytes.
+   * This avoids creating a new attachment record, which prevents duplicated attachments on notes.
+   */
+  static async overwriteFileStream(
+    {
+      stream,
+      attachmentPath,
+      fileSize,
+      type,
+      accountId,
+    }: {
+      stream: ReadableStream;
+      attachmentPath: string;
+      fileSize: number;
+      type: string;
+      accountId: number;
+    },
+  ) {
+    const attachment = await prisma.attachments.findFirst({
+      where: { path: attachmentPath },
+      include: { note: { select: { accountId: true } } },
+    });
+    if (!attachment) {
+      throw new Error('FILE_NOT_FOUND');
+    }
+
+    const isOwner =
+      attachment.accountId === accountId ||
+      attachment.note?.accountId === accountId;
+    if (!isOwner) {
+      throw new Error('FORBIDDEN');
+    }
+
+    // Normalize mime type.
+    const nextType = type || attachment.type || 'application/octet-stream';
+
+    if (attachmentPath.includes('/api/s3file/')) {
+      const { s3ClientInstance, config } = await this.getS3Client();
+      const key = this.extractAndValidatePath(attachmentPath);
+      const nodeReadable = Readable.fromWeb(stream as any);
+      const command = new PutObjectCommand({
+        Bucket: config.s3Bucket,
+        Key: key,
+        Body: nodeReadable as any,
+        ContentType: nextType,
+      });
+      await s3ClientInstance.send(command);
+    } else {
+      const filepath = this.extractAndValidatePath(attachmentPath);
+      await fs.mkdir(path.dirname(filepath), { recursive: true });
+      const nodeReadable = Readable.fromWeb(stream as any);
+      await new Promise<void>((resolve, reject) => {
+        const out = createWriteStream(filepath);
+        const onErr = (err: any) => reject(err);
+        out.on('error', onErr);
+        nodeReadable.on('error', onErr);
+        out.on('finish', () => resolve());
+        nodeReadable.pipe(out);
+      });
+    }
+
+    const updated = await prisma.attachments.update({
+      where: { id: attachment.id },
+      data: {
+        size: fileSize,
+        type: nextType,
+      },
+    });
+
+    return { filePath: updated.path, fileName: updated.name };
+  }
+
 
   /**
    * Get file buffer from S3 or local storage without creating temporary files
@@ -323,16 +397,25 @@ export class FileService {
       stream: ReadableStream, originalName: string, fileSize: number, type: string, accountId: number, metadata?: any, syncId?: string | null
     }) {
     const config = await getGlobalConfig({ useAdmin: true });
-    const extension = path.extname(originalName);
-    const baseName = path.basename(originalName, extension);
+    const safeOriginalName = sanitizeFilename(originalName || "upload.bin", { replacement: "_" });
+    const extension = path.extname(safeOriginalName);
+    const baseName = path.basename(safeOriginalName, extension);
     const timestamp = Date.now();
-    const timestampedFileName = `${baseName}_${timestamp}${extension}`;
+
+    // Sync-mode: when a stable `syncId` is provided, store the binary under a stable name so
+    // cross-device and inter-server sync can reference it deterministically.
+    const effectiveSyncId = (syncId ?? "").trim();
+    const stableFileName = effectiveSyncId ? `${effectiveSyncId}_${baseName}${extension}` : "";
+    const timestampedFileName = stableFileName || `${baseName}_${timestamp}${extension}`;
 
     try {
       if (config.objectStorage === 's3') {
         const { s3ClientInstance } = await this.getS3Client();
 
         let customPath = config.s3CustomPath || '';
+        // Sync-mode uses a stable, server-agnostic filename. Avoid extra path prefixes so
+        // `/api/file/<syncId>_<filename>` remains consistent across servers.
+        if (effectiveSyncId) customPath = '';
         if (customPath) {
           customPath = customPath.startsWith('/') ? customPath : '/' + customPath;
           customPath = customPath.endsWith('/') ? customPath : customPath + '/';
@@ -380,12 +463,16 @@ export class FileService {
           size: fileSize,
           type,
           accountId,
-          metadata
+          metadata,
+          syncId
         });
         return { filePath: s3Url, fileName: timestampedFileName };
 
       } else {
         let customPath = config.localCustomPath || '';
+        // Sync-mode uses a stable, server-agnostic filename. Avoid extra path prefixes so
+        // `/api/file/<syncId>_<filename>` remains consistent across servers.
+        if (effectiveSyncId) customPath = '';
         if (customPath) {
           customPath = customPath.startsWith('/') ? customPath : '/' + customPath;
           customPath = customPath.endsWith('/') ? customPath : customPath + '/';
@@ -456,20 +543,29 @@ export class FileService {
 
     const prefixPath = pathParts.slice(0, -1).join(',');
 
-    await prisma.attachments.create({
-      data: {
-        path,
-        name,
-        size,
-        type,
-        depth: pathParts.length - 1,
-        perfixPath: prefixPath.startsWith(',') ? prefixPath.substring(1) : prefixPath,
-        ...(noteId ? { noteId } : {}),
-        accountId,
-        ...(metadata ? { metadata } : {}),
-        ...(syncId ? { syncId } : {})
-      }
-    })
+    const effectiveSyncId = (syncId ?? '').trim() || crypto.randomUUID();
+    const data: any = {
+      path,
+      name,
+      size,
+      type,
+      depth: pathParts.length - 1,
+      perfixPath: prefixPath.startsWith(',') ? prefixPath.substring(1) : prefixPath,
+      ...(noteId ? { noteId } : {}),
+      accountId,
+      ...(metadata ? { metadata } : {}),
+      syncId: effectiveSyncId,
+    };
+
+    // Sync-mode: allow idempotent uploads by syncId.
+    const existing = await prisma.attachments.findFirst({
+      where: { accountId, syncId: effectiveSyncId },
+      select: { id: true }
+    });
+    if (existing) {
+      return await prisma.attachments.update({ where: { id: existing.id }, data });
+    }
+    return await prisma.attachments.create({ data });
   }
 
   static async renameFile(oldPath: string, newName: string) {

@@ -6,11 +6,13 @@ import jwt from 'jsonwebtoken';
 import { prisma } from "@server/prisma";
 import { User } from "@server/context";
 import { Request as ExpressRequest } from 'express';
-import { getGlobalConfig } from "@server/routerTrpc/config";
 
 export const SendWebhook = async (data: any, webhookType: string, ctx: any) => {
   try {
-    const globalConfig = await getGlobalConfig({ ctx })
+    // Lazily import config to avoid pulling in auth strategy init (and prisma seed side effects)
+    // for codepaths that don't need it (e.g. simple file endpoints).
+    const { getGlobalConfig } = await import("../routerTrpc/config");
+    const globalConfig = await getGlobalConfig({ ctx });
     if (globalConfig.webhookEndpoint) {
       await axios.post(globalConfig.webhookEndpoint, { data, webhookType, activityType: `blinko.note.${webhookType}` })
     }
@@ -177,6 +179,38 @@ export const getTokenFromRequest = async (req: ExpressRequest) => {
       }
     }
 
+    // Support browser-native auth for assets like `<img src="/api/file/...">` by allowing an HttpOnly cookie.
+    // This avoids leaking JWTs in URLs and works without custom headers.
+    const cookieHeader = (req.headers as any)?.cookie;
+    if (cookieHeader && typeof cookieHeader === 'string') {
+      const readCookie = (cookieName: string): string | null => {
+        const parts = cookieHeader.split(';');
+        for (const part of parts) {
+          const trimmed = part.trim();
+          if (!trimmed) continue;
+          const eq = trimmed.indexOf('=');
+          if (eq <= 0) continue;
+          const k = trimmed.slice(0, eq).trim();
+          if (k !== cookieName) continue;
+          const v = trimmed.slice(eq + 1).trim();
+          if (!v) return null;
+          try {
+            return decodeURIComponent(v);
+          } catch {
+            return v;
+          }
+        }
+        return null;
+      };
+
+      const cookieToken =
+        readCookie('blinko_token') || readCookie('blinkoToken') || readCookie('token');
+      if (cookieToken) {
+        const tokenData = await verifyToken(cookieToken);
+        if (tokenData) return { ...tokenData, id: tokenData.sub, token: cookieToken };
+      }
+    }
+
     if (req.query && req.query.token) {
       const token = req.query.token as string;
       const tokenData = await verifyToken(token);
@@ -302,4 +336,3 @@ export const generateUrlWithToken = async (url: string, user: any) => {
   const separator = url.includes('?') ? '&' : '?';
   return `${url}${separator}token=${token}`;
 }
-

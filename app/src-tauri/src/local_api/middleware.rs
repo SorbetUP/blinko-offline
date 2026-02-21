@@ -13,6 +13,12 @@ pub async fn auth_middleware(
     req: Request<Body>,
     next: Next,
 ) -> Result<Response, StatusCode> {
+    // Allow OPTIONS requests (CORS preflight) to pass through without authentication.
+    // Preflight requests never include credentials, so they must bypass auth checks.
+    if req.method() == axum::http::Method::OPTIONS {
+        return Ok(next.run(req).await);
+    }
+
     let path = req.uri().path();
     if is_public_path(path) {
         return Ok(next.run(req).await);
@@ -32,9 +38,20 @@ fn is_public_path(path: &str) -> bool {
     if path.starts_with("/dist/js/") {
         return true;
     }
+    if path.starts_with("/share/") {
+        return true;
+    }
+    // Attachments are protected at the handler level (shared-note checks, expiry, password, etc.).
+    // The middleware must allow these through so public share links can work without headers.
+    if path.starts_with("/api/file/") || path.starts_with("/attachments/") {
+        return true;
+    }
     if path.starts_with("/api/trpc/users.canRegister")
         || path.starts_with("/api/trpc/users.register")
     {
+        return true;
+    }
+    if path.starts_with("/api/trpc/notes.publicDetail") {
         return true;
     }
     matches!(

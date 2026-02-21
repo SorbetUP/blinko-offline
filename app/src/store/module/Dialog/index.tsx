@@ -4,6 +4,7 @@ import { ModalSlots, SlotsToClasses } from "@heroui/react";
 import { Store } from "@/store/standard/base";
 import { RootStore } from "@/store/root";
 import { makeAutoObservable } from "mobx";
+import { eventBus } from "@/lib/event";
 
 export class DialogStore implements Store {
   sid = "DialogStore";
@@ -38,13 +39,19 @@ export class DialogStore implements Store {
   }
 
   close() {
-    this.isOpen = false;
-    this.title = "";
-    this.content = "";
-    this.size = "md";
-    this.isDismissable = true;
-    this.onlyContent = false
-    this.showOnlyContentCloseButton = false
+    // Trigger save before closing (only saves if content changed)
+    eventBus.emit('editor:triggerSend');
+
+    // Small delay to let save start before unmounting editor
+    setTimeout(() => {
+      this.isOpen = false;
+      this.title = "";
+      this.content = "";
+      this.size = "md";
+      this.isDismissable = true;
+      this.onlyContent = false
+      this.showOnlyContentCloseButton = false
+    }, 50);
   }
 
   static show(v: Partial<DialogStore>) {

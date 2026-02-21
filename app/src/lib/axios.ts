@@ -11,6 +11,31 @@ const axiosInstance = axios.create({
 // Request interceptor
 axiosInstance.interceptors.request.use(
   (config) => {
+    // If some code set a generic multipart content-type, it can break uploads by omitting the boundary.
+    // Let the browser set the correct `Content-Type: multipart/form-data; boundary=...` for FormData.
+    try {
+      if (typeof FormData !== 'undefined' && config.data instanceof FormData && config.headers) {
+        const headers: any = config.headers;
+
+        // AxiosHeaders (axios v1) supports `.delete()` / `.set()`.
+        if (typeof headers.delete === 'function') {
+          headers.delete('Content-Type');
+          headers.delete('content-type');
+        }
+        if (typeof headers.set === 'function') {
+          // Ensure any previous value is cleared.
+          headers.set('Content-Type', undefined);
+          headers.set('content-type', undefined);
+        }
+
+        // Plain object fallback.
+        try { delete headers['Content-Type']; } catch {}
+        try { delete headers['content-type']; } catch {}
+      }
+    } catch {
+      // Ignore detection failures (non-browser envs, etc.).
+    }
+
     // Get token from UserStore
     const userStore = RootStore.Get(UserStore);
     const token = userStore.tokenData.value?.token;

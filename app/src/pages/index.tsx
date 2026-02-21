@@ -153,7 +153,7 @@ const Home = observer(() => {
             await currentListState.resetAndCall({})
           }}
           onBottom={() => {
-            blinko.onBottom();
+            return blinko.onBottom();
           }}
           style={{ height: store.showEditor ? `calc(100% - ${(isPc ? (!store.showEditor ? store.editorHeight : 10) : 0)}px)` : '100%' }}
           className={`px-2 mt-0 md:${blinko.config.value?.hidePcEditor ? 'mt-0' : 'mt-4'} md:px-6 w-full h-full !transition-all scroll-area`}>
@@ -218,7 +218,7 @@ const Home = observer(() => {
                   {activeId ? (
                     <div className="rotate-3 scale-105 opacity-90 max-w-sm shadow-xl">
                       <BlinkoCard
-                        blinkoItem={localNotes.find(n => n.id === activeId)}
+                        blinkoItem={localNotes?.find(n => n.id === activeId)}
                       />
                     </div>
                   ) : null}

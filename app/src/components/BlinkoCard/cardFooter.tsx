@@ -4,11 +4,16 @@ import { Note, NoteType } from '@shared/lib/types';
 import { ConvertItemFunction, ShowEditTimeModel } from '../BlinkoRightClickMenu';
 import { BlinkoStore } from '@/store/blinkoStore';
 import { useTranslation } from 'react-i18next';
-import { _ } from '@/lib/lodash';
 import { CommentCount } from './commentButton';
 import { BlinkoItem } from '.';
 import { RootStore } from '@/store';
 import dayjs from '@/lib/dayjs';
+import { useMemo, useState, memo } from 'react';
+import { isCredentialsNote } from '@/lib/notePrivacy';
+import { deriveNoteAttachments } from '@/lib/markdown/deriveNoteAttachments';
+import { extractApiFileRefsFromMarkdown } from '@/lib/markdown/extractApiFileAttachments';
+import { getBlinkoEndpoint } from '@/lib/blinkoEndpoint';
+import { eventBus } from '@/lib/event';
 
 interface CardFooterProps {
   blinkoItem: BlinkoItem;
@@ -21,8 +26,64 @@ export const CardFooter = ({ blinkoItem, blinko, isShareMode }: CardFooterProps)
   return (
     <div className="flex items-center">
       <ConvertTypeButton blinkoItem={blinkoItem} />
+      <UsedElementsToggle blinkoItem={blinkoItem} />
       <RightContent blinkoItem={blinkoItem} t={t} />
     </div>
+  );
+};
+
+
+const UsedElementsToggle = ({ blinkoItem }: { blinkoItem: BlinkoItem }) => {
+  const { t } = useTranslation();
+  const [showUsed, setShowUsed] = useState(false);
+
+  const hiddenCount = useMemo(() => {
+    if (!blinkoItem?.id) return 0;
+    if (isCredentialsNote(blinkoItem as any)) return 0;
+    const content = (blinkoItem.content ?? '').toString();
+    if (!content) return 0;
+
+    const derived = deriveNoteAttachments({
+      content,
+      attachments: (blinkoItem.attachments ?? []) as any,
+      noteId: blinkoItem.id,
+    });
+
+    if (!derived || derived.length === 0) return 0;
+
+    const usedRefs = extractApiFileRefsFromMarkdown(content);
+    const usedIds = new Set(usedRefs.map(ref => ref.id));
+    const usedNames = new Set<string>();
+
+    for (const a of derived as any[]) {
+      const path = String(a?.path || '');
+      const name = String(a?.name || '');
+      if (!path || !name) continue;
+      const matchesByText = content.includes(path) || content.includes(getBlinkoEndpoint(path));
+      const id = path.match(/\/api\/file\/(\d+)\b/)?.[1];
+      const matchesById = id ? usedIds.has(id) : false;
+      if (matchesByText || matchesById) usedNames.add(name);
+    }
+
+    return usedNames.size;
+  }, [blinkoItem?.id, blinkoItem?.content, blinkoItem?.attachments]);
+
+  if (!blinkoItem?.id) return null;
+  if (hiddenCount <= 0) return null;
+
+  return (
+    <button
+      type="button"
+      className="ml-2 underline text-desc text-xs font-bold hover:opacity-80 !transition-all"
+      onClick={(e) => {
+        e.stopPropagation();
+        const next = !showUsed;
+        setShowUsed(next);
+        eventBus.emit('attachments:setShowUsed', { noteId: blinkoItem.id, showUsed: next });
+      }}
+    >
+      {showUsed ? t('hide-used-attachments', { count: hiddenCount }) : t('show-used-attachments', { count: hiddenCount })}
+    </button>
   );
 };
 
@@ -42,8 +103,8 @@ export const ConvertTypeButton = ({
 
   const handleClick = (e) => {
     e.stopPropagation();
-    blinko.curSelectedNote = _.cloneDeep(blinkoItem);
-    
+    blinko.curSelectedNote = blinkoItem;
+
     if (blinkoItem.type === NoteType.TODO) {
       ShowEditTimeModel(true);
     } else {

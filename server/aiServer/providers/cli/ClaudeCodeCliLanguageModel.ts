@@ -5,54 +5,20 @@ import type {
   LanguageModelV1StreamPart,
 } from '@ai-sdk/provider';
 import { spawn } from 'child_process';
-import fs from 'fs';
+import { existsSync } from 'fs';
 import { promptToPlainText } from './promptToText';
+import { expandHome, chunkText, forEachJsonLine } from './shared';
 
 type ClaudeCodeCliLanguageModelOptions = {
   modelId: string;
   cliPath?: string;
 };
 
-function expandHome(p: string): string {
-  if (!p.startsWith('~')) return p;
-  const home = process.env.HOME;
-  if (!home) return p;
-  if (p === '~') return home;
-  if (p.startsWith('~/')) return `${home}${p.slice(1)}`;
-  return p;
-}
-
 function resolveClaudeCliPath(cliPath?: string): string {
   if (cliPath) return expandHome(cliPath);
   const fallback = expandHome('~/.local/bin/claude');
-  if (fs.existsSync(fallback)) return fallback;
+  if (existsSync(fallback)) return fallback;
   return 'claude';
-}
-
-function chunkText(text: string, chunkSize = 2048): string[] {
-  if (!text) return [];
-  const chunks: string[] = [];
-  for (let i = 0; i < text.length; i += chunkSize) chunks.push(text.slice(i, i + chunkSize));
-  return chunks;
-}
-
-function forEachJsonLine(onLine: (obj: any) => void) {
-  let buffer = '';
-  return (chunk: Buffer | Uint8Array) => {
-    buffer += Buffer.from(chunk).toString('utf8');
-    while (true) {
-      const idx = buffer.indexOf('\n');
-      if (idx === -1) break;
-      const line = buffer.slice(0, idx).trim();
-      buffer = buffer.slice(idx + 1);
-      if (!line) continue;
-      try {
-        onLine(JSON.parse(line));
-      } catch {
-        // ignore
-      }
-    }
-  };
 }
 
 function extractAssistantText(evt: any): string | null {

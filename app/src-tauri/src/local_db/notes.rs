@@ -19,6 +19,12 @@ pub struct Note {
     pub is_share: bool,
     pub is_top: bool,
     pub note_type: i64,
+    // Share fields (local mode parity with cloud).
+    pub share_password: String,
+    pub share_encrypted_url: Option<String>,
+    pub share_expiry_date: Option<DateTime<Utc>>,
+    pub share_max_view: i64,
+    pub share_view_count: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -30,6 +36,8 @@ pub struct NoteInput {
     pub is_share: bool,
     pub is_top: bool,
     pub note_type: i64,
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Clone)]
@@ -42,9 +50,17 @@ impl NoteRepository {
         Self { pool }
     }
 
+    pub async fn count_all_notes(&self) -> Result<i64, String> {
+        let (count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM notes")
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|e| format!("Failed to count notes: {e}"))?;
+        Ok(count)
+    }
+
     pub async fn list_notes(&self) -> Result<Vec<Note>, String> {
         sqlx::query_as::<_, Note>(
-            "SELECT id, sync_id, title, content, created_at, updated_at, deleted_at, rev, device_id, is_archived, is_recycle, is_share, is_top, note_type FROM notes WHERE deleted_at IS NULL ORDER BY updated_at DESC",
+            "SELECT id, sync_id, title, content, created_at, updated_at, deleted_at, rev, device_id, is_archived, is_recycle, is_share, is_top, note_type, share_password, share_encrypted_url, share_expiry_date, share_max_view, share_view_count FROM notes WHERE deleted_at IS NULL ORDER BY is_top DESC, updated_at DESC",
         )
         .fetch_all(&self.pool)
         .await
@@ -53,7 +69,7 @@ impl NoteRepository {
 
     pub async fn list_all_notes(&self) -> Result<Vec<Note>, String> {
         sqlx::query_as::<_, Note>(
-            "SELECT id, sync_id, title, content, created_at, updated_at, deleted_at, rev, device_id, is_archived, is_recycle, is_share, is_top, note_type FROM notes ORDER BY updated_at DESC",
+            "SELECT id, sync_id, title, content, created_at, updated_at, deleted_at, rev, device_id, is_archived, is_recycle, is_share, is_top, note_type, share_password, share_encrypted_url, share_expiry_date, share_max_view, share_view_count FROM notes ORDER BY is_top DESC, updated_at DESC",
         )
         .fetch_all(&self.pool)
         .await
@@ -64,13 +80,9 @@ impl NoteRepository {
         if ids.is_empty() {
             return Ok(vec![]);
         }
-        let placeholders = ids
-            .iter()
-            .map(|_| "?")
-            .collect::<Vec<_>>()
-            .join(",");
+        let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
         let query = format!(
-            "SELECT id, sync_id, title, content, created_at, updated_at, deleted_at, rev, device_id, is_archived, is_recycle, is_share, is_top, note_type FROM notes WHERE id IN ({placeholders})"
+            "SELECT id, sync_id, title, content, created_at, updated_at, deleted_at, rev, device_id, is_archived, is_recycle, is_share, is_top, note_type, share_password, share_encrypted_url, share_expiry_date, share_max_view, share_view_count FROM notes WHERE id IN ({placeholders})"
         );
         let mut q = sqlx::query_as::<_, Note>(&query);
         for id in ids {
@@ -83,7 +95,7 @@ impl NoteRepository {
 
     pub async fn get_note(&self, id: i64) -> Result<Option<Note>, String> {
         sqlx::query_as::<_, Note>(
-            "SELECT id, sync_id, title, content, created_at, updated_at, deleted_at, rev, device_id, is_archived, is_recycle, is_share, is_top, note_type FROM notes WHERE id = ?",
+            "SELECT id, sync_id, title, content, created_at, updated_at, deleted_at, rev, device_id, is_archived, is_recycle, is_share, is_top, note_type, share_password, share_encrypted_url, share_expiry_date, share_max_view, share_view_count FROM notes WHERE id = ?",
         )
         .bind(id)
         .fetch_optional(&self.pool)
@@ -93,7 +105,7 @@ impl NoteRepository {
 
     pub async fn get_note_by_sync_id(&self, sync_id: &str) -> Result<Option<Note>, String> {
         sqlx::query_as::<_, Note>(
-            "SELECT id, sync_id, title, content, created_at, updated_at, deleted_at, rev, device_id, is_archived, is_recycle, is_share, is_top, note_type FROM notes WHERE sync_id = ?",
+            "SELECT id, sync_id, title, content, created_at, updated_at, deleted_at, rev, device_id, is_archived, is_recycle, is_share, is_top, note_type, share_password, share_encrypted_url, share_expiry_date, share_max_view, share_view_count FROM notes WHERE sync_id = ?",
         )
         .bind(sync_id)
         .fetch_optional(&self.pool)
@@ -101,9 +113,24 @@ impl NoteRepository {
         .map_err(|e| format!("Failed to get note by sync_id: {e}"))
     }
 
+    pub async fn get_note_by_share_encrypted_url(
+        &self,
+        share_encrypted_url: &str,
+    ) -> Result<Option<Note>, String> {
+        sqlx::query_as::<_, Note>(
+            "SELECT id, sync_id, title, content, created_at, updated_at, deleted_at, rev, device_id, is_archived, is_recycle, is_share, is_top, note_type, share_password, share_encrypted_url, share_expiry_date, share_max_view, share_view_count FROM notes WHERE share_encrypted_url = ? AND is_share = 1 AND is_recycle = 0 AND deleted_at IS NULL",
+        )
+        .bind(share_encrypted_url)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| format!("Failed to get note by share url: {e}"))
+    }
+
     pub async fn create_note(&self, input: NoteInput, device_id: &str) -> Result<Note, String> {
         let sync_id = Uuid::new_v4().to_string();
         let now = Utc::now();
+        let created_at = input.created_at.unwrap_or(now);
+        let updated_at = input.updated_at.unwrap_or(now);
         let rev = 1_i64;
 
         sqlx::query(
@@ -112,8 +139,8 @@ impl NoteRepository {
         .bind(&sync_id)
         .bind(&input.title)
         .bind(&input.content)
-        .bind(now)
-        .bind(now)
+        .bind(created_at)
+        .bind(updated_at)
         .bind(rev)
         .bind(device_id)
         .bind(input.is_archived)
@@ -130,7 +157,12 @@ impl NoteRepository {
             .ok_or_else(|| "Failed to load created note".to_string())
     }
 
-    pub async fn update_note(&self, id: i64, input: NoteInput, device_id: &str) -> Result<Option<Note>, String> {
+    pub async fn update_note(
+        &self,
+        id: i64,
+        input: NoteInput,
+        device_id: &str,
+    ) -> Result<Option<Note>, String> {
         let now = Utc::now();
         sqlx::query(
             "UPDATE notes SET title = ?, content = ?, updated_at = ?, rev = rev + 1, device_id = ?, is_archived = ?, is_recycle = ?, is_share = ?, is_top = ?, note_type = ? WHERE id = ?",
@@ -164,6 +196,61 @@ impl NoteRepository {
         .execute(&self.pool)
         .await
         .map_err(|e| format!("Failed to delete note: {e}"))?;
+
+        self.get_note(id).await
+    }
+
+    pub async fn share_note(
+        &self,
+        id: i64,
+        is_cancel: bool,
+        password: &str,
+        expire_at: Option<DateTime<Utc>>,
+        device_id: &str,
+    ) -> Result<Option<Note>, String> {
+        let now = Utc::now();
+
+        if is_cancel {
+            sqlx::query(
+                "UPDATE notes SET is_share = 0, share_password = '', share_encrypted_url = NULL, share_expiry_date = NULL, share_max_view = 0, share_view_count = 0, updated_at = ?, rev = rev + 1, device_id = ? WHERE id = ?",
+            )
+            .bind(now)
+            .bind(device_id)
+            .bind(id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| format!("Failed to cancel share: {e}"))?;
+            return self.get_note(id).await;
+        }
+
+        let existing = self.get_note(id).await?;
+        let existing = match existing {
+            Some(note) => note,
+            None => return Ok(None),
+        };
+
+        let share_id = existing.share_encrypted_url.clone().unwrap_or_else(|| {
+            // Use UUID as entropy source; keep the token short for UX.
+            Uuid::new_v4()
+                .simple()
+                .to_string()
+                .chars()
+                .take(8)
+                .collect()
+        });
+
+        sqlx::query(
+            "UPDATE notes SET is_share = 1, share_password = ?, share_encrypted_url = ?, share_expiry_date = ?, updated_at = ?, rev = rev + 1, device_id = ? WHERE id = ?",
+        )
+        .bind(password)
+        .bind(&share_id)
+        .bind(expire_at)
+        .bind(now)
+        .bind(device_id)
+        .bind(id)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| format!("Failed to share note: {e}"))?;
 
         self.get_note(id).await
     }

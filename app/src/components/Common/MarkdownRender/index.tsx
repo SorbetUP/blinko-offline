@@ -17,7 +17,6 @@ import { ListItem } from './ListItem';
 import { TableWrapper } from './TableWrapper';
 import { useNavigate, useLocation } from 'react-router-dom';
 import remarkTaskList from 'remark-task-list';
-import { Skeleton } from '@heroui/react';
 import { MermaidWrapper } from './MermaidWrapper';
 import { MarkmapWrapper } from './MarkmapWrapper';
 import { EchartsWrapper } from './EchartsWrapper';
@@ -62,12 +61,24 @@ const Table = ({ children }: { children: React.ReactNode }) => {
 };
 
 export const MarkdownRender = observer(({ content = '', onChange, isShareMode, largeSpacing = false }: { content?: string, onChange?: (newContent: string) => void, isShareMode?: boolean, largeSpacing?: boolean }) => {
-  const { theme } = useTheme()
+  const { theme, resolvedTheme } = useTheme()
   const contentRef = useRef(null);
+  const activeTheme: 'dark' | 'light' = (() => {
+    if (resolvedTheme === 'dark' || resolvedTheme === 'light') return resolvedTheme;
+    if (theme === 'dark' || theme === 'light') return theme;
+    if (typeof document !== 'undefined') {
+      if (document.documentElement.classList.contains('dark')) return 'dark';
+      if (document.body?.classList.contains('dark')) return 'dark';
+      if (document.documentElement.classList.contains('light')) return 'light';
+      if (document.body?.classList.contains('light')) return 'light';
+      if (window.matchMedia?.('(prefers-color-scheme: dark)')?.matches) return 'dark';
+    }
+    return 'light';
+  })();
 
   return (
     <div className={`markdown-body ${largeSpacing ? 'markdown-large-spacing' : ''}`}>
-      <div ref={contentRef} data-markdown-theme={theme} className={`markdown-body content ${largeSpacing ? 'markdown-large-spacing' : ''}`}>
+      <div ref={contentRef} data-markdown-theme={activeTheme} className={`markdown-body content ${largeSpacing ? 'markdown-large-spacing' : ''}`}>
         <ReactMarkdown
           remarkPlugins={[
             [remarkGfm, { table: false }],
@@ -89,6 +100,40 @@ export const MarkdownRender = observer(({ content = '', onChange, isShareMode, l
           ]}
           components={{
             p: ({ node, children }) => {
+              // Special-case image-only paragraphs. This avoids invalid HTML like:
+              //   <p><span><img ... /></span></p>
+              // (valid) but historically we rendered a <div> in img and browsers auto-closed <p>,
+              // causing weird selection/tap-highlight blocks in some WebViews.
+              //
+              // Even with a valid inline image wrapper, rendering image-only paragraphs as a div
+              // prevents large selection rectangles to the right of the image on iOS/WebKit.
+              const isImageOnlyParagraph = (() => {
+                const childrenNodes = (node as any)?.children;
+                if (!Array.isArray(childrenNodes) || childrenNodes.length === 0) return false;
+
+                const meaningful = childrenNodes.filter((ch: any) => {
+                  if (ch?.type === 'text') return String(ch.value || '').trim().length > 0;
+                  return true;
+                });
+                if (meaningful.length === 0) return false;
+
+                return meaningful.every((ch: any) => {
+                  if (ch?.type === 'element' && ch.tagName === 'img') return true;
+                  if (ch?.type === 'element' && ch.tagName === 'a') {
+                    const aKids = (ch.children || []).filter((k: any) => {
+                      if (k?.type === 'text') return String(k.value || '').trim().length > 0;
+                      return true;
+                    });
+                    return aKids.length === 1 && aKids[0]?.type === 'element' && aKids[0]?.tagName === 'img';
+                  }
+                  return false;
+                });
+              })();
+
+              if (isImageOnlyParagraph) {
+                return <div className="my-2 select-none">{children}</div>;
+              }
+
               // Check if paragraph contains only a single link
               if (
                 node &&

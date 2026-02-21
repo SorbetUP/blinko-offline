@@ -119,12 +119,15 @@ export class PluginManagerStore implements Store {
   }
 
   async initInstalledPlugins() {
-    const plugins = await this.installedPlugins.getOrCall();
-    if (plugins) {
+    try {
+      const plugins = await this.installedPlugins.getOrCall();
+      if (!Array.isArray(plugins)) return;
       for (const plugin of plugins) {
         console.log('initInstalledPlugins', plugin.path);
         this.loadPlugin(plugin.path);
       }
+    } catch (error) {
+      console.error('initInstalledPlugins failed:', error);
     }
   }
 

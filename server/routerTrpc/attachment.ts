@@ -220,24 +220,24 @@ export const attachmentsRouter = router({
           UNION ALL
           
           SELECT 
-            id,
-            path,
-            name,
-            size,
-            type,
-            "isShare",
-            "sharePassword",
-            "noteId",
-            "sortOrder",
-            "createdAt",
-            "updatedAt",
-            false as is_folder,
-            NULL as folder_name
+              id,
+              path,
+              name,
+              size,
+              type,
+              "isShare",
+              "sharePassword",
+              "noteId",
+              "sortOrder",
+              "createdAt",
+              "updatedAt",
+              false as is_folder,
+              NULL as folder_name
           FROM attachments
           WHERE ("noteId" IN (
-            SELECT id FROM notes WHERE "accountId" = ${Number(ctx.id)}
+              SELECT id FROM notes WHERE "accountId" = ${Number(ctx.id)}
           ) OR "accountId" = ${Number(ctx.id)})
-            AND depth = 0
+            AND COALESCE(depth, 0) = 0
             AND LOWER(path) LIKE ${`%${searchText?.toLowerCase() || ''}%`}
         )
         SELECT *

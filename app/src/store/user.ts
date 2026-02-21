@@ -197,7 +197,14 @@ export class UserStore implements Store {
 
   async initializeSettings(setTheme: (theme: string) => void, i18n: any) {
     const base = RootStore.Get(BaseStore);
-    const config = await this.blinko.config.call()
+    let config = this.blinko.config.value;
+    if (this.isLogin) {
+      try {
+        config = await this.blinko.config.call();
+      } catch (error) {
+        console.error('Failed to fetch user config:', error);
+      }
+    }
     const handleFeatureRoute = (
       featureKey: 'hub' | 'ai',
       storageKey: string,

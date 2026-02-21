@@ -10,7 +10,7 @@ interface CodeProps {
 }
 
 export const Code = ({ className, children, ...props }: CodeProps) => {
-  const { theme } = useTheme()
+  const { theme, resolvedTheme } = useTheme()
   
   if (!children) return null;
   
@@ -19,7 +19,19 @@ export const Code = ({ className, children, ...props }: CodeProps) => {
   const shouldHighlight = !className || className?.includes('language-') || className?.includes('hljs');
   
   const isCodeBlock = shouldHighlight && (String(children).includes('\n') || (className && className.includes('language-')));
-  
+  const activeTheme = (() => {
+    if (resolvedTheme === 'dark' || resolvedTheme === 'light') return resolvedTheme;
+    if (theme === 'dark' || theme === 'light') return theme;
+    if (typeof document !== 'undefined') {
+      if (document.documentElement.classList.contains('dark')) return 'dark';
+      if (document.body?.classList.contains('dark')) return 'dark';
+      if (document.documentElement.classList.contains('light')) return 'light';
+      if (document.body?.classList.contains('light')) return 'light';
+      if (window.matchMedia?.('(prefers-color-scheme: dark)')?.matches) return 'dark';
+    }
+    return 'light';
+  })();
+
   return isCodeBlock ? (
     <div className="relative group">
       <Copy content={String(children).replace(/\n$/, '')} size={16} className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -31,7 +43,7 @@ export const Code = ({ className, children, ...props }: CodeProps) => {
         customStyle={{
           borderRadius: '16px',
         }}
-        style={theme == 'light' ? oneLight : vscDarkPlus}
+        style={activeTheme === 'light' ? oneLight : vscDarkPlus}
       />
     </div>
   ) : (

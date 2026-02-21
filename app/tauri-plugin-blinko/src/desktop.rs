@@ -23,4 +23,17 @@ impl<R: Runtime> Blinko<R> {
     // Different platforms would need different implementations
     Ok(())
   }
+
+  pub fn present_share_sheet(&self, _payload: PresentShareSheetRequest) -> crate::Result<()> {
+    // iOS-only UI; desktop can use native opener/download flows instead.
+    Ok(())
+  }
+
+  pub fn get_pending_share_payload(&self) -> crate::Result<Option<String>> {
+    Ok(None)
+  }
+
+  pub fn clear_pending_share_payload(&self) -> crate::Result<()> {
+    Ok(())
+  }
 }

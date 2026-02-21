@@ -18,8 +18,10 @@ import { NoteType } from '@shared/lib/types';
 import { eventBus } from '@/lib/event';
 import { getBlinkoEndpoint } from '@/lib/blinkoEndpoint';
 import axiosInstance from '@/lib/axios';
+import { sanitizeBlobLinksWithAttachments } from '@/lib/markdown/sanitizeBlobLinks';
 
 export class EditorStore {
+  instanceId: string = `editor-${Math.random().toString(36).slice(2)}`
   files: FileType[] = []
   lastRange: Range | null = null
   lastStartOffset: number = 0
@@ -58,6 +60,21 @@ export class EditorStore {
   noteType!: NoteType;
   currentTagLabel: string = ''
   metadata: any = {};
+
+  fixBlobLinksInCurrentContent = () => {
+    const current = this.vditor?.getValue?.() ?? '';
+    if (!current) return;
+    const attachments = this.files
+      // `preview` may still be the stable `/api/...` path when editing an existing note.
+      .map((f: any) => ({ name: f?.name, path: f?.uploadPromise?.value || f?.preview }))
+      .filter((a) => typeof a?.name === 'string' && typeof a?.path === 'string');
+    const next = sanitizeBlobLinksWithAttachments(current, attachments);
+    if (next !== current) {
+      // Best-effort: keep editor + backing store consistent.
+      this.vditor?.setValue(next);
+      this.onChange?.(next);
+    }
+  }
 
   get showIsEditText() {
     if (this.mode == 'edit') {
@@ -294,6 +311,11 @@ export class EditorStore {
         RootStore.Get(BlinkoStore).editAttachmentsStorage.push(t)
       })
     }
+
+    // If the user inserted a markdown link/image while the upload was still in-flight,
+    // it might have used a `blob:` preview URL. Now that we have stable upload paths,
+    // rewrite those references automatically.
+    this.fixBlobLinksInCurrentContent();
   }
 
   handlePasteFile = ({ fileName, filePath, type, size }: { fileName: string, filePath: string, type: string, size: number }) => {
@@ -373,8 +395,15 @@ export class EditorStore {
         this.vditor?.insertValue(`\n\n${this.currentTagLabel} `)
         this.onChange?.(this.vditor?.getValue() ?? '')
       }
+
+      // Never persist ephemeral blob links in note content.
+      content = sanitizeBlobLinksWithAttachments(
+        content,
+        this.files.map((f: any) => ({ name: f?.name, path: f?.uploadPromise?.value })),
+      );
+
       await this.onSend?.({
-        content: this.vditor?.getValue() ?? '',
+        content,
         files: this.files.map(i => ({ ...i, uploadPath: i.uploadPromise.value })),
         noteType: this.noteType,
         references: this.references,
@@ -382,7 +411,11 @@ export class EditorStore {
       });
       this.clearEditor();
       RootStore.Get(AiStore).isWriting = false;
-      eventBus.emit('editor:setFullScreen', false);
+      eventBus.emit('editor:setFullScreen', {
+        isFullscreen: false,
+        mode: this.mode,
+        editorId: this.instanceId,
+      });
     } catch (error) {
       console.error('Failed to send content:', error);
     }
@@ -446,10 +479,5 @@ export class EditorStore {
 
   setFullscreen(value: boolean) {
     this.isFullscreen = value;
-    if (value) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = 'auto';
-    }
   }
 }

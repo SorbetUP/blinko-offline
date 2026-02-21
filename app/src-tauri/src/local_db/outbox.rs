@@ -2,6 +2,10 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, SqlitePool};
 
+pub const OUTBOX_STATUS_PENDING: &str = "pending";
+pub const OUTBOX_STATUS_PUSHED: &str = "pushed";
+pub const OUTBOX_STATUS_SENT: &str = "sent";
+
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct OutboxEntry {
     pub id: i64,
@@ -33,8 +37,8 @@ impl OutboxRepository {
         device_id: &str,
     ) -> Result<OutboxEntry, String> {
         let now = Utc::now();
-        sqlx::query(
-            "INSERT INTO outbox (entity_type, entity_id, op, payload_json, ts, device_id, status) VALUES (?, ?, ?, ?, ?, ?, 'pending')",
+        let res = sqlx::query(
+            "INSERT INTO outbox (entity_type, entity_id, op, payload_json, ts, device_id, status) VALUES (?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(entity_type)
         .bind(entity_id)
@@ -42,42 +46,65 @@ impl OutboxRepository {
         .bind(payload_json)
         .bind(now)
         .bind(device_id)
+        .bind(OUTBOX_STATUS_PENDING)
         .execute(&self.pool)
         .await
         .map_err(|e| format!("Failed to append outbox: {e}"))?;
 
-        let id = sqlx::query_scalar::<_, i64>("SELECT last_insert_rowid()")
-            .fetch_one(&self.pool)
-            .await
-            .map_err(|e| format!("Failed to read outbox id: {e}"))?;
+        let id = res.last_insert_rowid();
 
         self.get_by_id(id).await
     }
 
     pub async fn list_pending(&self, limit: i64) -> Result<Vec<OutboxEntry>, String> {
-        sqlx::query_as::<_, OutboxEntry>(
-            "SELECT id, entity_type, entity_id, op, payload_json, ts, device_id, status FROM outbox WHERE status = 'pending' ORDER BY id ASC LIMIT ?",
-        )
-        .bind(limit)
-        .fetch_all(&self.pool)
-        .await
-        .map_err(|e| format!("Failed to list outbox: {e}"))
+        self.list_by_statuses(&[OUTBOX_STATUS_PENDING], limit).await
+    }
+
+    pub async fn list_by_statuses(
+        &self,
+        statuses: &[&str],
+        limit: i64,
+    ) -> Result<Vec<OutboxEntry>, String> {
+        if statuses.is_empty() {
+            return Ok(Vec::new());
+        }
+        let placeholders = std::iter::repeat("?")
+            .take(statuses.len())
+            .collect::<Vec<_>>()
+            .join(",");
+        let sql = format!(
+            "SELECT id, entity_type, entity_id, op, payload_json, ts, device_id, status FROM outbox WHERE status IN ({placeholders}) ORDER BY id ASC LIMIT ?",
+        );
+        let mut q = sqlx::query_as::<_, OutboxEntry>(&sql);
+        for status in statuses {
+            q = q.bind(status);
+        }
+        q = q.bind(limit);
+        q.fetch_all(&self.pool)
+            .await
+            .map_err(|e| format!("Failed to list outbox: {e}"))
     }
 
     pub async fn mark_sent(&self, ids: &[i64]) -> Result<(), String> {
+        self.mark_status(ids, OUTBOX_STATUS_SENT).await
+    }
+
+    pub async fn mark_status(&self, ids: &[i64], status: &str) -> Result<(), String> {
         if ids.is_empty() {
             return Ok(());
         }
-        let ids_list = ids
-            .iter()
-            .map(|id| id.to_string())
+        let placeholders = std::iter::repeat("?")
+            .take(ids.len())
             .collect::<Vec<_>>()
             .join(",");
-        let query = format!("UPDATE outbox SET status = 'sent' WHERE id IN ({ids_list})");
-        sqlx::query(&query)
-            .execute(&self.pool)
+        let sql = format!("UPDATE outbox SET status = ? WHERE id IN ({placeholders})");
+        let mut q = sqlx::query(&sql).bind(status);
+        for id in ids {
+            q = q.bind(id);
+        }
+        q.execute(&self.pool)
             .await
-            .map_err(|e| format!("Failed to mark outbox sent: {e}"))?;
+            .map_err(|e| format!("Failed to mark outbox status: {e}"))?;
         Ok(())
     }
 
@@ -89,5 +116,28 @@ impl OutboxRepository {
         .fetch_one(&self.pool)
         .await
         .map_err(|e| format!("Failed to get outbox entry: {e}"))
+    }
+
+    pub async fn count_by_status(&self, status: &str) -> Result<i64, String> {
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM outbox WHERE status = ?")
+            .bind(status)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|e| format!("Failed to count outbox: {e}"))
+    }
+
+    pub async fn count_by_status_and_entity_type(
+        &self,
+        status: &str,
+        entity_type: &str,
+    ) -> Result<i64, String> {
+        sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM outbox WHERE status = ? AND entity_type = ?",
+        )
+        .bind(status)
+        .bind(entity_type)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| format!("Failed to count outbox: {e}"))
     }
 }

@@ -45,6 +45,8 @@ pub struct LocalConfig {
     pub device_id: Option<String>,
     pub remote_endpoints: Vec<RemoteEndpoint>,
     pub allow_insecure_http: bool,
+    pub sync_auto: bool,
+    pub sync_interval_secs: u64,
     pub local_api: LocalApiConfig,
 }
 
@@ -56,6 +58,8 @@ impl Default for LocalConfig {
             device_id: None,
             remote_endpoints: Vec::new(),
             allow_insecure_http: false,
+            sync_auto: true,
+            sync_interval_secs: 300,
             local_api: LocalApiConfig::default(),
         }
     }
@@ -84,8 +88,77 @@ pub fn save_config(paths: &RuntimePaths, config: &LocalConfig) -> Result<(), Str
 }
 
 fn migrate_config(config: LocalConfig) -> LocalConfig {
-    if config.schema_version == 0 {
-        return LocalConfig { schema_version: 1, ..config };
+    let mut out = config;
+
+    if out.schema_version == 0 {
+        out.schema_version = 1;
     }
-    config
+
+    // Deprecate legacy remote-only mode: sync is now derived from the presence of endpoints.
+    // - Remote + endpoints => Sync
+    // - Remote + no endpoints => Local
+    if matches!(out.mode, LocalMode::Remote) {
+        out.mode = if out.remote_endpoints.is_empty() {
+            LocalMode::Local
+        } else {
+            LocalMode::Sync
+        };
+    }
+
+    // Normalize mode based on whether any remote endpoints are configured.
+    out.mode = if out.remote_endpoints.is_empty() {
+        LocalMode::Local
+    } else {
+        LocalMode::Sync
+    };
+
+    // Fill defaults for new sync controls if missing/invalid in older configs.
+    if out.sync_interval_secs == 0 {
+        out.sync_interval_secs = 300;
+    }
+
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{migrate_config, LocalConfig, LocalMode, RemoteEndpoint};
+
+    fn endpoint(id: &str) -> RemoteEndpoint {
+        RemoteEndpoint {
+            id: id.to_string(),
+            url: "https://example.invalid".to_string(),
+            token: None,
+            last_sync_at: None,
+        }
+    }
+
+    #[test]
+    fn remote_mode_with_endpoints_migrates_to_sync() {
+        let mut cfg = LocalConfig::default();
+        cfg.mode = LocalMode::Remote;
+        cfg.remote_endpoints = vec![endpoint("a")];
+
+        let migrated = migrate_config(cfg);
+        assert!(matches!(migrated.mode, LocalMode::Sync));
+    }
+
+    #[test]
+    fn remote_mode_without_endpoints_migrates_to_local() {
+        let mut cfg = LocalConfig::default();
+        cfg.mode = LocalMode::Remote;
+        cfg.remote_endpoints = vec![];
+
+        let migrated = migrate_config(cfg);
+        assert!(matches!(migrated.mode, LocalMode::Local));
+    }
+
+    #[test]
+    fn zero_interval_is_normalized_to_default() {
+        let mut cfg = LocalConfig::default();
+        cfg.sync_interval_secs = 0;
+
+        let migrated = migrate_config(cfg);
+        assert_eq!(migrated.sync_interval_secs, 300);
+    }
 }

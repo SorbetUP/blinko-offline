@@ -6,8 +6,7 @@ import { ContextMenuTrigger } from '@/components/Common/ContextMenu';
 import { Note } from '@shared/lib/types';
 import { ShowEditBlinkoModel } from "../BlinkoRightClickMenu";
 import { useMediaQuery } from "usehooks-ts";
-import { _ } from '@/lib/lodash';
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { CardBlogBox } from "./cardBlogBox";
 import { NoteContent } from "./noteContent";
 import { helper } from "@/lib/helper";
@@ -52,17 +51,23 @@ export const BlinkoCard = observer(({ blinkoItem, account, isShareMode = false, 
   // Set isExpand flag to prevent drag when fullscreen editor is open for this note
   blinkoItem.isExpand = blinko.fullscreenEditorNoteId === blinkoItem.id;
 
-  if (forceBlog) {
-    blinkoItem.isBlog = true
-  } else {
-    blinkoItem.isBlog = ((blinkoItem.content?.length ?? 0) > (blinko.config.value?.textFoldLength ?? 1000)) && !pathname.includes('/share/')
-  }
-  blinkoItem.title = blinkoItem.content?.split('\n').find(line => {
-    if (!line.trim()) return false;
-    if (helper.regex.isContainHashTag.test(line)) return false;
-    return true;
-  }) || '';
+  // Memoize isBlog calculation to avoid recalculating on every render
+  const isBlog = useMemo(() => {
+    if (forceBlog) return true;
+    return ((blinkoItem.content?.length ?? 0) > (blinko.config.value?.textFoldLength ?? 1000)) && !pathname.includes('/share/');
+  }, [forceBlog, blinkoItem.content?.length, blinko.config.value?.textFoldLength, pathname]);
 
+  // Memoize title calculation to avoid recalculating on every render
+  const title = useMemo(() => {
+    return blinkoItem.content?.split('\n').find(line => {
+      if (!line.trim()) return false;
+      if (helper.regex.isContainHashTag.test(line)) return false;
+      return true;
+    }) || '';
+  }, [blinkoItem.content]);
+
+  blinkoItem.isBlog = isBlog;
+  blinkoItem.title = title;
 
   const handleClick = () => {
     if (blinko.isMultiSelectMode) {
@@ -70,19 +75,16 @@ export const BlinkoCard = observer(({ blinkoItem, account, isShareMode = false, 
       return;
     }
     if (isShareMode) return;
-    if (blinkoItem.isBlog) {
-      setIsFullscreenEditorOpen(true);
-      blinko.fullscreenEditorNoteId = blinkoItem.id!;
-      return;
-    }
-    blinko.curSelectedNote = _.cloneDeep(blinkoItem);
+    // Direct assignment - no need for cloneDeep as MobX handles reactivity
+    blinko.curSelectedNote = blinkoItem;
     ShowEditBlinkoModel();
     FocusEditorFixMobile();
   };
 
   const handleContextMenu = () => {
     if (isShareMode) return;
-    blinko.curSelectedNote = _.cloneDeep(blinkoItem);
+    // Direct assignment - no need for cloneDeep as MobX handles reactivity
+    blinko.curSelectedNote = blinkoItem;
   };
 
   const handleSwipePin = () => {

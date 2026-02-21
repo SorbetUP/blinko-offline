@@ -3,6 +3,8 @@ import path from 'path';
 import { FileService } from '../../lib/files';
 import { getTokenFromRequest } from '../../lib/helper';
 import cors from 'cors';
+import { prisma } from '../../prisma';
+import { getServerInstanceId } from '../../lib/serverInstance';
 
 const router = express.Router();
 
@@ -115,6 +117,46 @@ router.post('/', async (req, res) => {
       type: response.headers.get("content-type") || "",
       accountId: Number(token.id)
     });
+
+    // Best-effort: emit attachment sync op so sync-mode clients can pull and download by sync id.
+    try {
+      const accountId = Number(token.id);
+      const attachment = await prisma.attachments.findFirst({
+        where: { accountId, path: filePath.filePath },
+        orderBy: { id: 'desc' },
+      });
+      if (attachment?.syncId) {
+        const instanceId = await getServerInstanceId(prisma);
+        const safeName = (attachment.name || originalName || 'download').replace(/[\\/]/g, '_');
+        const payload = {
+          id: 0,
+          sync_id: attachment.syncId,
+          note_id: null,
+          filename: attachment.name || safeName,
+          mime: attachment.type || response.headers.get("content-type") || "application/octet-stream",
+          size: Number((attachment.size as any)?.toString?.() ?? attachment.size ?? buffer.length ?? 0) || 0,
+          sha256: '',
+          path: `${attachment.syncId}_${safeName}`,
+          created_at: attachment.createdAt?.toISOString?.() ?? new Date().toISOString(),
+          updated_at: attachment.updatedAt?.toISOString?.() ?? new Date().toISOString(),
+          deleted_at: null,
+        };
+
+        await prisma.syncChanges.create({
+          data: {
+            accountId,
+            entityType: 'attachment',
+            entityId: attachment.syncId,
+            op: 'upsert',
+            payloadJson: JSON.stringify(payload),
+            ts: new Date(),
+            deviceId: `server-upload:${instanceId}:${accountId}`,
+          }
+        });
+      }
+    } catch (err) {
+      console.error('attachment sync emit error:', err);
+    }
 
     res.set({
       'Access-Control-Allow-Origin': req.headers.origin || '',

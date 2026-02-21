@@ -29,7 +29,10 @@ pub struct AttachmentRepository {
 
 impl AttachmentRepository {
     pub fn new(pool: SqlitePool, attachments_dir: PathBuf) -> Self {
-        Self { pool, attachments_dir }
+        Self {
+            pool,
+            attachments_dir,
+        }
     }
 
     pub async fn save_file(
@@ -48,26 +51,86 @@ impl AttachmentRepository {
 
         fs::create_dir_all(&self.attachments_dir)
             .map_err(|e| format!("Failed to create attachments dir: {e}"))?;
-        fs::write(&file_path, bytes)
-            .map_err(|e| format!("Failed to write attachment: {e}"))?;
+        fs::write(&file_path, bytes).map_err(|e| format!("Failed to write attachment: {e}"))?;
 
+        self.create_attachment_record(
+            &sync_id,
+            note_id,
+            filename,
+            mime,
+            bytes.len() as i64,
+            &sha256,
+            &stored_name,
+            now,
+        )
+        .await
+    }
+
+    pub async fn overwrite_file(
+        &self,
+        id: i64,
+        bytes: &[u8],
+        filename: &str,
+        mime: &str,
+    ) -> Result<Attachment, String> {
+        let now = Utc::now();
+        let sha256 = format_hash(bytes);
+        let safe_name = filename.replace(['/', '\\'], "_");
+
+        let att = self
+            .get_by_id(id)
+            .await?
+            .ok_or_else(|| "Attachment not found".to_string())?;
+
+        let file_path = self.attachments_dir.join(&att.path);
+        fs::create_dir_all(&self.attachments_dir)
+            .map_err(|e| format!("Failed to create attachments dir: {e}"))?;
+        fs::write(&file_path, bytes).map_err(|e| format!("Failed to write attachment: {e}"))?;
+
+        sqlx::query("UPDATE attachments SET filename = ?, mime = ?, size = ?, sha256 = ?, updated_at = ? WHERE id = ?")
+            .bind(safe_name)
+            .bind(mime)
+            .bind(bytes.len() as i64)
+            .bind(&sha256)
+            .bind(now)
+            .bind(id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| format!("Failed to update attachment: {e}"))?;
+
+        self.get_by_id(id)
+            .await?
+            .ok_or_else(|| "Failed to load attachment".to_string())
+    }
+
+    pub async fn create_attachment_record(
+        &self,
+        sync_id: &str,
+        note_id: Option<i64>,
+        filename: &str,
+        mime: &str,
+        size: i64,
+        sha256: &str,
+        stored_name: &str,
+        now: DateTime<Utc>,
+    ) -> Result<Attachment, String> {
         sqlx::query(
             "INSERT INTO attachments (sync_id, note_id, filename, mime, size, sha256, path, created_at, updated_at, deleted_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)",
         )
-        .bind(&sync_id)
+        .bind(sync_id)
         .bind(note_id)
         .bind(filename)
         .bind(mime)
-        .bind(bytes.len() as i64)
-        .bind(&sha256)
-        .bind(&stored_name)
+        .bind(size)
+        .bind(sha256)
+        .bind(stored_name)
         .bind(now)
         .bind(now)
         .execute(&self.pool)
         .await
         .map_err(|e| format!("Failed to insert attachment: {e}"))?;
 
-        self.get_by_sync_id(&sync_id)
+        self.get_by_sync_id(sync_id)
             .await?
             .ok_or_else(|| "Failed to load attachment".to_string())
     }
@@ -136,7 +199,10 @@ impl AttachmentRepository {
         Ok(())
     }
 
-    pub async fn upsert_attachment_by_sync_id(&self, attachment: &Attachment) -> Result<Attachment, String> {
+    pub async fn upsert_attachment_by_sync_id(
+        &self,
+        attachment: &Attachment,
+    ) -> Result<Attachment, String> {
         sqlx::query(
             "INSERT INTO attachments (sync_id, note_id, filename, mime, size, sha256, path, created_at, updated_at, deleted_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) 
              ON CONFLICT(sync_id) DO UPDATE SET note_id = excluded.note_id, filename = excluded.filename, mime = excluded.mime, size = excluded.size, sha256 = excluded.sha256, path = excluded.path, updated_at = excluded.updated_at, deleted_at = excluded.deleted_at",

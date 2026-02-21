@@ -1,11 +1,12 @@
 use tauri::{AppHandle, Manager};
 
-
-
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
-use tauri_plugin_global_shortcut::{ShortcutState, ShortcutEvent};
+use tauri_plugin_global_shortcut::{ShortcutEvent, ShortcutState};
 
-use crate::desktop::{HotkeyConfig, setup_system_tray, toggle_quicknote_window, toggle_quickai_window, toggle_quicktool_window, restore_main_window_state, setup_window_state_monitoring};
+use crate::desktop::{
+    restore_main_window_state, setup_system_tray, setup_window_state_monitoring,
+    toggle_quickai_window, toggle_quicknote_window, toggle_quicktool_window, HotkeyConfig,
+};
 
 pub fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let app_handle = app.handle();
@@ -47,7 +48,7 @@ pub fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>>
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
         let default_config = HotkeyConfig::default();
-        
+
         // Setup system tray
         if default_config.system_tray_enabled {
             if let Err(e) = setup_system_tray(&app_handle) {
@@ -56,12 +57,10 @@ pub fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>>
                 println!("System tray setup successfully");
             }
         }
-        
+
         // Note: Shortcuts will be registered when frontend loads user configuration
         // This prevents conflicts between default and user-configured shortcuts
         println!("Waiting for frontend to register shortcuts based on user configuration...");
-
-        
     }
 
     Ok(())
@@ -72,44 +71,53 @@ fn shortcuts_match(actual: &str, registered: &str) -> bool {
     // Normalize both shortcuts for comparison
     let normalize = |s: &str| -> String {
         let mut normalized = s.to_lowercase();
-        
+
         // Handle CommandOrControl -> control mapping
         normalized = normalized.replace("commandorcontrol", "control");
-        
+
         // Remove "key" prefix from key names (control+KeyG -> control+g)
         normalized = normalized.replace("key", "");
-        
+
         // Ensure consistent casing for modifiers
         normalized = normalized.replace("shift+", "shift+");
         normalized = normalized.replace("control+", "control+");
         normalized = normalized.replace("alt+", "alt+");
         normalized = normalized.replace("cmd+", "control+");
         normalized = normalized.replace("command+", "control+");
-        
+
         // Sort modifiers to ensure consistent order
         let parts: Vec<&str> = normalized.split('+').collect();
         if parts.len() > 1 {
-            let mut modifiers: Vec<&str> = parts[..parts.len()-1].to_vec();
-            let key = parts[parts.len()-1];
+            let mut modifiers: Vec<&str> = parts[..parts.len() - 1].to_vec();
+            let key = parts[parts.len() - 1];
             modifiers.sort();
             format!("{}+{}", modifiers.join("+"), key)
         } else {
             normalized
         }
     };
-    
+
     let normalized_actual = normalize(actual);
     let normalized_registered = normalize(registered);
-    
-    println!("Shortcut match comparison: '{}' (from '{}') == '{}' (from '{}') -> {}", 
-             normalized_actual, actual, normalized_registered, registered,
-             normalized_actual == normalized_registered);
-    
+
+    println!(
+        "Shortcut match comparison: '{}' (from '{}') == '{}' (from '{}') -> {}",
+        normalized_actual,
+        actual,
+        normalized_registered,
+        registered,
+        normalized_actual == normalized_registered
+    );
+
     normalized_actual == normalized_registered
 }
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
-pub fn create_global_shortcut_handler() -> impl Fn(&AppHandle<tauri::Wry>, &tauri_plugin_global_shortcut::Shortcut, ShortcutEvent) + Send + Sync + 'static {
+pub fn create_global_shortcut_handler(
+) -> impl Fn(&AppHandle<tauri::Wry>, &tauri_plugin_global_shortcut::Shortcut, ShortcutEvent)
+       + Send
+       + Sync
+       + 'static {
     move |app, shortcut, event| {
         if event.state == ShortcutState::Pressed {
             let shortcut_str = shortcut.to_string();
@@ -118,8 +126,15 @@ pub fn create_global_shortcut_handler() -> impl Fn(&AppHandle<tauri::Wry>, &taur
 
             // Check for text selection trigger combinations
             // Handle different representations of backtick/grave accent
-            if shortcut_str.contains("Control") && (shortcut_str.contains("`") || shortcut_str.contains("Backquote") || shortcut_str.contains("Grave")) {
-                println!("🎹 Text selection trigger pressed: {} (ctrl + `)", shortcut_str);
+            if shortcut_str.contains("Control")
+                && (shortcut_str.contains("`")
+                    || shortcut_str.contains("Backquote")
+                    || shortcut_str.contains("Grave"))
+            {
+                println!(
+                    "🎹 Text selection trigger pressed: {} (ctrl + `)",
+                    shortcut_str
+                );
                 let is_enabled = crate::desktop::is_text_selection_enabled_for("ctrl");
                 println!("🔍 Text selection enabled for ctrl: {}", is_enabled);
                 if is_enabled {
@@ -129,8 +144,15 @@ pub fn create_global_shortcut_handler() -> impl Fn(&AppHandle<tauri::Wry>, &taur
                 } else {
                     println!("⚠️ Text selection not enabled for ctrl, ignoring shortcut");
                 }
-            } else if shortcut_str.contains("Shift") && (shortcut_str.contains("`") || shortcut_str.contains("Backquote") || shortcut_str.contains("Grave")) {
-                println!("🎹 Text selection trigger pressed: {} (shift + `)", shortcut_str);
+            } else if shortcut_str.contains("Shift")
+                && (shortcut_str.contains("`")
+                    || shortcut_str.contains("Backquote")
+                    || shortcut_str.contains("Grave"))
+            {
+                println!(
+                    "🎹 Text selection trigger pressed: {} (shift + `)",
+                    shortcut_str
+                );
                 let is_enabled = crate::desktop::is_text_selection_enabled_for("shift");
                 println!("🔍 Text selection enabled for shift: {}", is_enabled);
                 if is_enabled {
@@ -140,8 +162,15 @@ pub fn create_global_shortcut_handler() -> impl Fn(&AppHandle<tauri::Wry>, &taur
                 } else {
                     println!("⚠️ Text selection not enabled for shift, ignoring shortcut");
                 }
-            } else if shortcut_str.contains("Alt") && (shortcut_str.contains("`") || shortcut_str.contains("Backquote") || shortcut_str.contains("Grave")) {
-                println!("🎹 Text selection trigger pressed: {} (alt + `)", shortcut_str);
+            } else if shortcut_str.contains("Alt")
+                && (shortcut_str.contains("`")
+                    || shortcut_str.contains("Backquote")
+                    || shortcut_str.contains("Grave"))
+            {
+                println!(
+                    "🎹 Text selection trigger pressed: {} (alt + `)",
+                    shortcut_str
+                );
                 let is_enabled = crate::desktop::is_text_selection_enabled_for("alt");
                 println!("🔍 Text selection enabled for alt: {}", is_enabled);
                 if is_enabled {
@@ -165,22 +194,25 @@ pub fn create_global_shortcut_handler() -> impl Fn(&AppHandle<tauri::Wry>, &taur
                         let _ = toggle_quicknote_window(app.clone());
                         println!("Triggered quicknote window via shortcut: {}", shortcut_str);
                         return;
-                    },
+                    }
                     "quickai" => {
                         let _ = toggle_quickai_window(app.clone());
                         println!("Triggered quickai window via shortcut: {}", shortcut_str);
                         return;
-                    },
+                    }
                     "quicktool" => {
                         let _ = toggle_quicktool_window(app.clone());
                         println!("Triggered quicktool window via shortcut: {}", shortcut_str);
                         return;
-                    },
+                    }
                     "text-selection" => {
-                        println!("🚀 Triggering text selection via direct shortcut: {}", shortcut_str);
+                        println!(
+                            "🚀 Triggering text selection via direct shortcut: {}",
+                            shortcut_str
+                        );
                         crate::desktop::handle_text_selection(app);
                         return;
-                    },
+                    }
                     _ => {
                         println!("Unknown command for shortcut {}: {}", shortcut_str, command);
                     }
@@ -191,36 +223,60 @@ pub fn create_global_shortcut_handler() -> impl Fn(&AppHandle<tauri::Wry>, &taur
 
             // If no direct match, try to find by matching against all registered shortcuts
             for (registered_shortcut, command) in shortcuts_map.iter() {
-                println!("🔍 Checking registered shortcut: '{}' -> '{}'", registered_shortcut, command);
+                println!(
+                    "🔍 Checking registered shortcut: '{}' -> '{}'",
+                    registered_shortcut, command
+                );
                 if shortcuts_match(&shortcut_str, registered_shortcut) {
-                    println!("✅ Found matching shortcut: {} -> {}", shortcut_str, registered_shortcut);
+                    println!(
+                        "✅ Found matching shortcut: {} -> {}",
+                        shortcut_str, registered_shortcut
+                    );
                     match command.as_str() {
                         "quicknote" => {
                             let _ = toggle_quicknote_window(app.clone());
-                            println!("Triggered quicknote window via matched shortcut: {} -> {}", shortcut_str, registered_shortcut);
+                            println!(
+                                "Triggered quicknote window via matched shortcut: {} -> {}",
+                                shortcut_str, registered_shortcut
+                            );
                             return;
-                        },
+                        }
                         "quickai" => {
                             let _ = toggle_quickai_window(app.clone());
-                            println!("Triggered quickai window via matched shortcut: {} -> {}", shortcut_str, registered_shortcut);
+                            println!(
+                                "Triggered quickai window via matched shortcut: {} -> {}",
+                                shortcut_str, registered_shortcut
+                            );
                             return;
-                        },
+                        }
                         "quicktool" => {
                             let _ = toggle_quicktool_window(app.clone());
-                            println!("Triggered quicktool window via matched shortcut: {} -> {}", shortcut_str, registered_shortcut);
+                            println!(
+                                "Triggered quicktool window via matched shortcut: {} -> {}",
+                                shortcut_str, registered_shortcut
+                            );
                             return;
-                        },
+                        }
                         "text-selection" => {
-                            println!("🚀 Triggering text selection via matched shortcut: {} -> {}", shortcut_str, registered_shortcut);
+                            println!(
+                                "🚀 Triggering text selection via matched shortcut: {} -> {}",
+                                shortcut_str, registered_shortcut
+                            );
                             crate::desktop::handle_text_selection(app);
                             return;
-                        },
+                        }
                         _ => {
-                            println!("⚠️ Unknown command '{}' for shortcut {}", command, registered_shortcut);
+                            println!(
+                                "⚠️ Unknown command '{}' for shortcut {}",
+                                command, registered_shortcut
+                            );
                         }
                     }
                 } else {
-                    println!("❌ No match for shortcut: {} vs {}", shortcut_str, registered_shortcut);
+                    println!(
+                        "❌ No match for shortcut: {} vs {}",
+                        shortcut_str, registered_shortcut
+                    );
                 }
             }
 

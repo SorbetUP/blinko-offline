@@ -37,9 +37,11 @@ export default function Component() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const blinko = RootStore.Get(BlinkoStore);
+  const userStore = RootStore.Get(UserStore);
 
   useEffect(() => {
-    blinko.config.call();
+    if (!userStore.isLogin) return;
+    void blinko.config.call();
   }, []);
 
   useEffect(() => {

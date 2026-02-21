@@ -7,6 +7,23 @@ import { verifyToken, generateToken } from '../../lib/helper';
 
 const router = express.Router();
 
+const setAuthCookie = (req: any, res: any, token: string) => {
+  try {
+    if (!token) return;
+    const isSecure =
+      !!req?.secure || (req?.headers && req.headers['x-forwarded-proto'] === 'https');
+    res.cookie('blinko_token', token, {
+      httpOnly: true,
+      secure: isSecure,
+      sameSite: isSecure ? 'none' : 'lax',
+      maxAge: 30 * 24 * 60 * 60 * 1000,
+      path: '/',
+    });
+  } catch (error) {
+    console.warn('Failed to set auth cookie:', error);
+  }
+};
+
 function handleOAuthCallback(req: any, res: any, err: any, user: any, info: any) {
   if (err) {
     console.error('OAuth authentication error:', err);
@@ -21,6 +38,7 @@ function handleOAuthCallback(req: any, res: any, err: any, user: any, info: any)
   }
 
   console.log('oauth verify success, user:', user.id);
+  setAuthCookie(req, res, user.token);
   
   return res.redirect(`/oauth-callback?success=true&token=${encodeURIComponent(user.token)}`);
 }
@@ -79,6 +97,7 @@ router.post('/login', (req, res, next) => {
         user: user.id
       });
 
+      setAuthCookie(req, res, user.token);
       return res.json({
         user: {
           id: user.id,
@@ -138,6 +157,7 @@ router.post('/verify-2fa', async (req: any, res) => {
       user: user.id
     });
 
+    setAuthCookie(req, res, token);
     return res.json({
       user: {
         id: user.id,

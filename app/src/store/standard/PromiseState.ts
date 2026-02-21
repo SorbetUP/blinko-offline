@@ -86,7 +86,8 @@ export class PromiseState<T extends (...args: any[]) => Promise<any>, U = Return
     if (this.key) {
       RootStore.init().add(this, { sid: this.key });
     } else {
-      makeAutoObservable(this);
+      // Keep internal caches non-observable to avoid overhead.
+      makeAutoObservable(this, { _seenIds: false });
     }
   }
 
@@ -160,6 +161,10 @@ export class PromisePageState<T extends (...args: any) => Promise<any>, U = Retu
   loading = new BooleanState();
   isLoadAll: boolean = false;
   autoAuthRedirect: boolean = true;
+  // Optional stable ID extractor to enable O(pageSize) dedup when appending pages.
+  // If omitted, we fall back to `item.id` when available, otherwise no dedup.
+  getId?: (item: any) => string | number;
+  private _seenIds: Set<string | number> | null = null;
   get isEmpty() {
     if (this.loading.value) return false
     if (this.value == null) return true
@@ -208,6 +213,63 @@ export class PromisePageState<T extends (...args: any) => Promise<any>, U = Retu
     this.value = _val;
   }
 
+  private _extractId(item: any): string | number | null {
+    if (this.getId) {
+      try {
+        const id = this.getId(item);
+        return typeof id === 'string' || typeof id === 'number' ? id : null;
+      } catch {
+        return null;
+      }
+    }
+    if (item && typeof item === 'object' && 'id' in item) {
+      const id = (item as any).id;
+      return typeof id === 'string' || typeof id === 'number' ? id : null;
+    }
+    return null;
+  }
+
+  private _resetSeenIdsFrom(items: any[] | null) {
+    if (!items || items.length === 0) {
+      this._seenIds = null;
+      return;
+    }
+    const firstId = this._extractId(items[0]);
+    if (firstId == null) {
+      this._seenIds = null;
+      return;
+    }
+    const s = new Set<string | number>();
+    for (const it of items) {
+      const id = this._extractId(it);
+      if (id != null) s.add(id);
+    }
+    this._seenIds = s;
+  }
+
+  private _appendDedup(existing: any[] | null, incoming: any[]): any[] {
+    const base = Array.isArray(existing) ? existing : [];
+    if (!this._seenIds) this._resetSeenIdsFrom(base);
+
+    if (!this._seenIds) {
+      // No stable IDs available; best-effort append.
+      return base.concat(incoming);
+    }
+
+    const out = base.slice();
+    for (const item of incoming) {
+      const id = this._extractId(item);
+      if (id == null) {
+        out.push(item);
+        continue;
+      }
+      if (this._seenIds.has(id)) continue;
+      this._seenIds.add(id);
+      out.push(item);
+    }
+    return out;
+  }
+
   private async call(...args: Parameters<T>): Promise<Awaited<U> | undefined> {
     const toast = RootStore.Get(ToastPlugin);
     const base = RootStore.Get(BaseStore);
@@ -230,33 +292,19 @@ export class PromisePageState<T extends (...args: any) => Promise<any>, U = Retu
         this.isLoadAll = true
         if (this.page == 1) {
           this.setValue(null);
+          this._seenIds = null;
         }
         //@ts-ignore
         return this.value
       }
-      if (res.length == Number(this.size.value)) {
-        if (this.page == 1) {
-          this.setValue(res);
-        } else {
-          //@ts-ignore
-          // Fix: Deduplicate items when concatenating pages to avoid duplicate display
-          const existingMap = new Map(this.value!.map(item => [item.id, item]));
-          res.forEach(item => {
-            if (!existingMap.has(item.id)) {
-              existingMap.set(item.id, item);
-            }
-          });
-          this.setValue(Array.from(existingMap.values()));
-        }
+      // Do not infer "load all" from `res.length < size`. Some backends may return a short page
+      // due to filtering/dedup while still having more items on subsequent pages.
+      if (this.page == 1) {
+        this.setValue(res);
+        this._resetSeenIdsFrom(res);
       } else {
-        if (this.page == 1) {
-          this.setValue(res);
-          this.isLoadAll = true
-        } else {
-          //@ts-ignore
-          this.setValue(this.value!.concat(res));
-          this.isLoadAll = true
-        }
+        //@ts-ignore
+        this.setValue(this._appendDedup(this.value, res));
       }
 
       if (this.autoAlert && this.successMsg && res) {
@@ -289,6 +337,7 @@ export class PromisePageState<T extends (...args: any) => Promise<any>, U = Retu
   async resetAndCall(...args: Parameters<T>): Promise<Awaited<U> | undefined> {
     this.isLoadAll = false
     this.page = 1
+    this._seenIds = null
     //@ts-ignore
     return await this.call(...args)
   }

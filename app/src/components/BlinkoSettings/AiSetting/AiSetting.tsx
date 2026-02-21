@@ -22,6 +22,7 @@ import { Copy } from '../../Common/Copy';
 import { MarkdownRender } from '../../Common/MarkdownRender';
 import { getBlinkoEndpoint } from '@/lib/blinkoEndpoint';
 import { OllamaLocalServerSection } from './OllamaLocalServerSection';
+import { isDesktop } from '@/lib/tauriHelper';
 
 
 export default observer(function AiSetting() {
@@ -69,7 +70,7 @@ export default observer(function AiSetting() {
         </div>
       </CollapsibleCard>
 
-      <OllamaLocalServerSection />
+      {isDesktop() ? <OllamaLocalServerSection /> : null}
 
       <DefaultModelsSection />
 

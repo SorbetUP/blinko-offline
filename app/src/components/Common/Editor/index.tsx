@@ -32,6 +32,7 @@ import { PluginApiStore } from "@/store/plugin/pluginApiStore";
 import { PluginRender } from '@/store/plugin/pluginRender';
 import { IconButton } from "./Toolbar/IconButton";
 import { ResourceReferenceButton } from "./Toolbar/ResourceReferenceButton";
+import { ExcalidrawButton } from "./Toolbar/ExcalidrawButton";
 
 //https://ld246.com/guide/markdown
 type IProps = {
@@ -88,6 +89,7 @@ const Editor = observer(({ content, onChange, onSend, isSendLoading, originFiles
           {blinko.config.value?.mainModelId && (
             <AIWriteButton />
           )}
+          <ExcalidrawButton onFileUpload={store.uploadFiles} />
           <UploadButtons
             getInputProps={getInputProps}
             open={open}
@@ -160,6 +162,23 @@ const Editor = observer(({ content, onChange, onSend, isSendLoading, originFiles
   useEditorFiles(store, blinko, originFiles);
   useEditorHeight(onHeightChange, blinko, content, store);
 
+  // Listen for external save trigger (e.g., from FullscreenEditor close)
+  useEffect(() => {
+    const handleTriggerSend = () => {
+      // Only save if content has actually changed
+      if (mode === 'edit' && store.showIsEditText) {
+        store.handleSend();
+      } else if (mode === 'create' && content && content.trim().length > 0) {
+        store.handleSend();
+      }
+      // Otherwise, just let it close without saving (no changes to save)
+    };
+    eventBus.on('editor:triggerSend', handleTriggerSend);
+    return () => {
+      eventBus.off('editor:triggerSend', handleTriggerSend);
+    };
+  }, [store, mode, content]);
+
   // Handle initial data from sharing
   useEffect(() => {
     if (initialData && mode === 'create') {
@@ -193,15 +212,86 @@ const Editor = observer(({ content, onChange, onSend, isSendLoading, originFiles
     }
   });
 
-  const { onDrop, ...rootProps } = getRootProps();
-
   const handleFileReorder = (newFiles: FileType[]) => {
     store.updateFileOrder(newFiles);
   };
 
   const handleFullScreenToggle = () => {
-    eventBus.emit('editor:setFullScreen', !store.isFullscreen);
+    // Keep parent state synchronized before fullscreen re-layout/re-init.
+    onChange?.(store.vditor?.getValue?.() ?? content);
+    eventBus.emit('editor:setFullScreen', {
+      isFullscreen: !store.isFullscreen,
+      mode,
+      editorId: store.instanceId,
+    });
   };
+
+  const editorCard = (
+    <Card
+      shadow='none'
+      className={`${(showTopToolbar || store.isFullscreen) ? 'h-full flex flex-col flex-1 min-h-0' : 'p-2'} relative ${withoutOutline ? '' : 'border-2 border-border'} !transition-all ${(showTopToolbar || store.isFullscreen) ? 'overflow-hidden' : 'overflow-visible'} 
+        ${store.isFullscreen ? 'm-0 rounded-none border-none bg-background' : ''}`}
+      ref={el => {
+        if (el) {
+          //@ts-ignore
+          el.__storeInstance = store;
+        }
+      }}>
+
+      <div ref={cardRef}
+        className={`${(showTopToolbar || store.isFullscreen) ? 'flex-1 flex flex-col min-h-0 overflow-hidden' : 'overflow-visible'} relative`}
+        onKeyDown={e => {
+          onHeightChange?.()
+          if (isPc) return
+          store.adjustMobileEditorHeight()
+        }}>
+
+        <div id={`vditor-${mode}`} className={`vditor ${(showTopToolbar || store.isFullscreen) ? 'flex-1 overflow-hidden flex flex-col fullscreen-editor' : ''}`} />
+        {store.files.length > 0 && (
+          <div className='w-full my-2 attachment-container'>
+            <AttachmentsRender files={store.files} onReorder={handleFileReorder} noteContent={content} />
+          </div>
+        )}
+
+        <div className='w-full mb-2 reference-container'>
+          <ReferenceRender store={store} />
+        </div>
+
+        {/* Editor Footer Slots */}
+        {pluginApi.customEditorFooterSlots
+          .filter(slot => {
+            if (slot.isHidden) return false;
+            if (slot.showCondition && !slot.showCondition(mode)) return false;
+            if (slot.hideCondition && slot.hideCondition(mode)) return false;
+            return true;
+          })
+          .sort((a, b) => (a.order || 0) - (b.order || 0))
+          .map((slot) => (
+            <div
+              key={slot.name}
+              className={`mb-2 ${slot.className || ''}`}
+              style={slot.style}
+              onClick={slot.onClick}
+              onMouseEnter={slot.onHover}
+              onMouseLeave={slot.onLeave}
+            >
+              <div style={{ maxWidth: slot.maxWidth }}>
+                <PluginRender content={slot.content} data={mode} />
+              </div>
+            </div>
+          ))}
+
+        {!showTopToolbar && (
+          <div className='flex w-full items-center gap-1 mt-auto'>
+            {renderToolbar()}
+            {renderRightToolbar()}
+          </div>
+        )}
+      </div>
+    </Card>
+  );
+
+  const editorRootClass = `${isDragAccept ? 'border-2 border-green-500 border-dashed' : ''} ${(showTopToolbar || store.isFullscreen) ? 'h-full flex flex-col' : ''} ${store.isFullscreen ? 'fixed inset-0 z-[2147483647] bg-background' : ''}`;
 
   return (
     <>
@@ -213,71 +303,10 @@ const Editor = observer(({ content, onChange, onSend, isSendLoading, originFiles
         </div>,
         topToolbarElement
       )}
-      
-      <div {...getRootProps()} className={`${isDragAccept ? 'border-2 border-green-500 border-dashed' : ''} ${showTopToolbar ? 'h-full flex flex-col' : ''}`}>
-      <Card
-        shadow='none'
-        className={`${showTopToolbar ? 'h-full flex flex-col flex-1 min-h-0' : 'p-2'} relative ${withoutOutline ? '' : 'border-2 border-border'} !transition-all ${showTopToolbar ? 'overflow-hidden' : 'overflow-visible'} 
-        ${store.isFullscreen ? 'fixed inset-0 z-[9999] m-0 rounded-none border-none bg-background' : ''}`}
-        ref={el => {
-          if (el) {
-            //@ts-ignore
-            el.__storeInstance = store;
-          }
-        }}>
 
-        <div ref={cardRef}
-          className={`overflow-visible relative ${showTopToolbar ? 'flex-1 flex flex-col min-h-0' : ''}`}
-          onKeyDown={e => {
-            onHeightChange?.()
-            if (isPc) return
-            store.adjustMobileEditorHeight()
-          }}>
-
-            <div id={`vditor-${mode}`} className={`vditor ${showTopToolbar ? 'flex-1 overflow-hidden flex flex-col fullscreen-editor' : ''}`} />
-          {store.files.length > 0 && (
-            <div className='w-full my-2 attachment-container'>
-              <AttachmentsRender files={store.files} onReorder={handleFileReorder} />
-            </div>
-          )}
-
-          <div className='w-full mb-2 reference-container'>
-            <ReferenceRender store={store} />
-          </div>
-
-          {/* Editor Footer Slots */}
-          {pluginApi.customEditorFooterSlots
-            .filter(slot => {
-              if (slot.isHidden) return false;
-              if (slot.showCondition && !slot.showCondition(mode)) return false;
-              if (slot.hideCondition && slot.hideCondition(mode)) return false;
-              return true;
-            })
-            .sort((a, b) => (a.order || 0) - (b.order || 0))
-            .map((slot) => (
-              <div
-                key={slot.name}
-                className={`mb-2 ${slot.className || ''}`}
-                style={slot.style}
-                onClick={slot.onClick}
-                onMouseEnter={slot.onHover}
-                onMouseLeave={slot.onLeave}
-              >
-                <div style={{ maxWidth: slot.maxWidth }}>
-                  <PluginRender content={slot.content} data={mode} />
-                </div>
-              </div>
-            ))}
-
-          {!showTopToolbar && (
-            <div className='flex w-full items-center gap-1 mt-auto'>
-              {renderToolbar()}
-              {renderRightToolbar()}
-            </div>
-          )}
-        </div>
-      </Card>
-    </div>
+      <div {...getRootProps()} className={editorRootClass} data-editor-instance-id={store.instanceId}>
+        {editorCard}
+      </div>
     </>
   );
 });

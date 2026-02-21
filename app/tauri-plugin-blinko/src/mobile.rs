@@ -38,4 +38,25 @@ impl<R: Runtime> Blinko<R> {
       .run_mobile_plugin("openAppSettings", ())
       .map_err(Into::into)
   }
+
+  pub fn present_share_sheet(&self, payload: PresentShareSheetRequest) -> crate::Result<()> {
+    self
+      .0
+      .run_mobile_plugin("presentShareSheet", payload)
+      .map_err(Into::into)
+  }
+
+  pub fn get_pending_share_payload(&self) -> crate::Result<Option<String>> {
+    self
+      .0
+      .run_mobile_plugin("getPendingSharePayload", ())
+      .map_err(Into::into)
+  }
+
+  pub fn clear_pending_share_payload(&self) -> crate::Result<()> {
+    self
+      .0
+      .run_mobile_plugin("clearPendingSharePayload", ())
+      .map_err(Into::into)
+  }
 }

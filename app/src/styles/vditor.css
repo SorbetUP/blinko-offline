@@ -1,5 +1,7 @@
 .vditor {
   border: none;
+  overflow-x: hidden;
+  overscroll-behavior-x: none;
 }
 
 #vditorExportIframe {
@@ -9,6 +11,13 @@
 
 .vditor-content {
   min-height: 20px;
+  overflow-x: hidden;
+  overscroll-behavior-x: none;
+}
+
+.vditor-preview {
+  overflow-x: hidden;
+  overscroll-behavior-x: none;
 }
 
 @media screen and (max-width: 520px) {
@@ -64,6 +73,18 @@
   min-height: var(--min-editor-height);
   padding-top: 5px;
   padding-bottom: 5px;
+  /* Avoid accidental horizontal panning that can clip the first characters. */
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-x: none;
+  touch-action: pan-y;
+}
+
+.vditor-ir,
+.vditor-sv,
+.vditor-wysiwyg {
+  overflow-x: hidden;
+  overscroll-behavior-x: none;
 }
 
 /* Fullscreen editor mode - remove max-height restriction */
@@ -93,6 +114,7 @@
 .vditor.fullscreen-editor .vditor-preview {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
   min-height: 0;
 }
 
@@ -229,8 +251,12 @@
 
 .vditor-reset img {
   max-height: 150px;
-  /* width: 100%; */
-  margin: 0 auto;
+  max-width: 100%;
+  display: block;
+  /* Default: align images to the left (avoid centering placeholders like the broken-image icon). */
+  margin: 0;
+  user-select: none;
+  -webkit-user-drag: none;
   object-fit: cover;
 }
 
@@ -364,6 +390,16 @@
 .vditor-reset blockquote {
   border-left: 0.25em solid #EAB308;
   color: var(--desc);
+}
+
+/* Defensive fallback: keep code blocks dark in dark theme even if highlight CSS races/mismatches. */
+.vditor-theme-dark .hljs,
+.vditor-theme-dark .vditor-reset pre,
+.vditor-theme-dark .vditor-reset pre code,
+.vditor-theme-dark .vditor-preview pre code.hljs,
+.vditor-theme-dark .vditor-ir__preview pre code.hljs {
+  background-color: #0d1117 !important;
+  color: #c9d1d9 !important;
 }
 
 /* ABCJS (musical notation) dark mode support */

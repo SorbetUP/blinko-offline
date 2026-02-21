@@ -1,15 +1,16 @@
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { isInTauri, isDesktop } from '@/lib/tauriHelper';
+import { getTauriListen } from '@/lib/tauriEvent';
 import { RootStore } from '@/store';
 import { AiStore } from '@/store/aiStore';
 
-export const useQuickaiHotkey = () => {
+export const useQuickaiHotkey = (enabled = true) => {
   const navigate = useNavigate();
   const aiStore = RootStore.Get(AiStore);
 
   useEffect(() => {
-    if (!isInTauri() || !isDesktop()) return;
+    if (!enabled || !isInTauri() || !isDesktop()) return;
 
     let isMounted = true;
     const unlisteners: (() => void)[] = [];
@@ -17,7 +18,7 @@ export const useQuickaiHotkey = () => {
 
     const setupEventListeners = async () => {
       try {
-        const { listen } = await import('@tauri-apps/api/event');
+        const listen = await getTauriListen();
 
         if (!isMounted) return;
 
@@ -94,5 +95,5 @@ export const useQuickaiHotkey = () => {
         }
       });
     };
-  }, [navigate, aiStore]);
+  }, [enabled, navigate, aiStore]);
 };

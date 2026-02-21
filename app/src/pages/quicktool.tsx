@@ -225,9 +225,10 @@ const QuickToolPage = observer(() => {
   // Check and fix route when component mounts or window gains focus
   useEffect(() => {
     const checkAndFixRoute = () => {
-      if (window.location.hash !== '#/quicktool') {
+      if (window.location.pathname !== '/quicktool') {
         console.log("🔄 Route is wrong, fixing to /quicktool");
-        window.location.hash = '#/quicktool';
+        window.history.replaceState(null, '', '/quicktool');
+        window.dispatchEvent(new PopStateEvent('popstate'));
       }
     };
 

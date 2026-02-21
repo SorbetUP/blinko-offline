@@ -6,6 +6,7 @@ use crate::local_runtime::paths::RuntimePaths;
 
 pub mod attachments;
 pub mod conflicts;
+pub mod maintenance;
 pub mod notes;
 pub mod oplog;
 pub mod outbox;
@@ -92,6 +93,8 @@ mod tests {
                 is_share: false,
                 is_top: false,
                 note_type: 0,
+                created_at: None,
+                updated_at: None,
             }, "test-device")
             .await
             .unwrap();
@@ -117,6 +120,8 @@ mod tests {
                     is_share: false,
                     is_top: false,
                     note_type: 0,
+                    created_at: None,
+                    updated_at: None,
                 },
                 "test-device",
             )
